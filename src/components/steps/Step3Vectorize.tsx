@@ -24,8 +24,7 @@ export function Step3Vectorize() {
 
   useEffect(() => {
     workerRef.current = new Worker(
-      new URL('../../workers/opencv.worker.ts', import.meta.url),
-      { type: 'module' }
+      new URL('../../workers/opencv.worker.ts', import.meta.url)
     )
     workerRef.current.onmessage = (e) => {
       if (e.data.type === 'ready') runDetection()
