@@ -18,7 +18,6 @@ describe('pointsToDxf', () => {
     expect(dxf).toContain('EOF')
   })
   it('applies scaleFactor to coordinates', () => {
-    // pt x=100 * factor=0.3 = 30mm
     const dxf = pointsToDxf(pts, 0.3)
     expect(dxf).toContain('30.')
   })
@@ -26,5 +25,15 @@ describe('pointsToDxf', () => {
     const dxf = pointsToDxf([], 1)
     expect(dxf).toContain('ENTITIES')
     expect(dxf).not.toContain('POLYLINE')
+  })
+  it('includes extra paths as separate POLYLINE entities', () => {
+    const extra: ContourPoint[] = [
+      { id: 'a', x: 10, y: 10, type: 'line' },
+      { id: 'b', x: 20, y: 10, type: 'line' },
+      { id: 'c', x: 20, y: 20, type: 'line' },
+    ]
+    const dxf = pointsToDxf(pts, 0.3, [extra])
+    // Should have two POLYLINE entries
+    expect(dxf.split('POLYLINE').length - 1).toBe(2)
   })
 })

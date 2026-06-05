@@ -7,22 +7,33 @@ interface AppState {
   imageWidth: number
   imageHeight: number
   scaleRef: ScaleRef | null
-  scaleFactor: number        // mm per pixel (0 until set)
+  scaleFactor: number
+  /** Active (currently editable) path */
   contourPoints: ContourPoint[]
+  /** Finalized separate paths (each is an independent closed/open contour) */
+  paths: ContourPoint[][]
   history: ContourSnapshot[]
   historyIndex: number
   activeToolId: ToolId
   zoom: number
+  stagePos: { x: number; y: number }
 
   setStep: (step: AppStep) => void
   setImage: (img: HTMLImageElement, w: number, h: number) => void
   setScaleRef: (ref: ScaleRef, factor: number) => void
   setContourPoints: (points: ContourPoint[]) => void
+  /** Finalize current active path and start a new empty one */
+  addNewPath: () => void
+  /** Remove a finalized path by index */
+  removePathAt: (index: number) => void
+  /** Replace all paths and active contour at once */
+  setPaths: (paths: ContourPoint[][], active?: ContourPoint[]) => void
   pushHistory: () => void
   undo: () => void
   redo: () => void
   setActiveTool: (id: ToolId) => void
   setZoom: (z: number) => void
+  setStagePos: (pos: { x: number; y: number }) => void
   reset: () => void
 }
 
@@ -33,11 +44,13 @@ const initialState = {
   imageHeight: 0,
   scaleRef: null,
   scaleFactor: 0,
-  contourPoints: [],
-  history: [],
+  contourPoints: [] as ContourPoint[],
+  paths: [] as ContourPoint[][],
+  history: [] as ContourSnapshot[],
   historyIndex: -1,
   activeToolId: 'select' as ToolId,
   zoom: 1,
+  stagePos: { x: 0, y: 0 },
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -52,9 +65,27 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setContourPoints: (contourPoints) => set({ contourPoints }),
 
+  addNewPath: () => {
+    const { contourPoints, paths } = get()
+    if (contourPoints.length < 2) return
+    set({
+      paths: [...paths, contourPoints.map(p => ({ ...p }))],
+      contourPoints: [],
+      history: [],
+      historyIndex: -1,
+    })
+  },
+
+  removePathAt: (index) => {
+    const { paths } = get()
+    set({ paths: paths.filter((_, i) => i !== index) })
+  },
+
+  setPaths: (paths, active = []) => set({ paths, contourPoints: active }),
+
   pushHistory: () => {
     const { contourPoints, history, historyIndex } = get()
-    const snapshot: ContourSnapshot = { points: [...contourPoints.map(p => ({ ...p }))] }
+    const snapshot: ContourSnapshot = { points: contourPoints.map(p => ({ ...p })) }
     const newHistory = history.slice(0, historyIndex + 1)
     newHistory.push(snapshot)
     set({ history: newHistory, historyIndex: newHistory.length - 1 })
@@ -63,20 +94,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   undo: () => {
     const { history, historyIndex } = get()
     if (historyIndex <= 0) return
-    const prev = history[historyIndex - 1]
-    set({ contourPoints: prev.points, historyIndex: historyIndex - 1 })
+    set({ contourPoints: history[historyIndex - 1].points, historyIndex: historyIndex - 1 })
   },
 
   redo: () => {
     const { history, historyIndex } = get()
     if (historyIndex >= history.length - 1) return
-    const next = history[historyIndex + 1]
-    set({ contourPoints: next.points, historyIndex: historyIndex + 1 })
+    set({ contourPoints: history[historyIndex + 1].points, historyIndex: historyIndex + 1 })
   },
 
   setActiveTool: (activeToolId) => set({ activeToolId }),
 
   setZoom: (zoom) => set({ zoom }),
+
+  setStagePos: (stagePos) => set({ stagePos }),
 
   reset: () => set({ ...initialState }),
 }))

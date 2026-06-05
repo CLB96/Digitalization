@@ -8,7 +8,13 @@
       "Bash(timeout 15 npm run dev)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(cd \"/c/Users/PC AERO R5 PRO/Desktop/Proyectos IA/Digitalizacion\" && grep -n \"useShallow\" src/hooks/useKeyboardShortcuts.ts src/components/editor/Toolbar.tsx src/components/steps/Step2Scale.tsx)",
+      "Bash(cd \"/c/Users/PC AERO R5 PRO/Desktop/Proyectos IA/Digitalizacion\" && grep -n \"new Worker\" src/components/steps/Step3Vectorize.tsx)",
+      "Bash(cd \"/c/Users/PC AERO R5 PRO/Desktop/Proyectos IA/Digitalizacion\" && grep -n \"^export\" src/workers/opencv.worker.ts)",
+      "Bash(npx vitest *)"
     ]
   }
 }

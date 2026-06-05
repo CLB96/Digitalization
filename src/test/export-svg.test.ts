@@ -15,12 +15,20 @@ describe('pointsToSvg', () => {
     expect(svg).toContain('</svg>')
   })
   it('viewBox uses mm dimensions', () => {
-    // max x=100*0.3=30, max y=50*0.3=15
     const svg = pointsToSvg(pts, 0.3)
     expect(svg).toContain('viewBox="0 0 30')
   })
   it('includes path element', () => {
     const svg = pointsToSvg(pts, 0.3)
     expect(svg).toContain('<path')
+  })
+  it('includes multiple path elements for extra paths', () => {
+    const extra: ContourPoint[] = [
+      { id: 'a', x: 10, y: 10, type: 'line' },
+      { id: 'b', x: 20, y: 10, type: 'line' },
+      { id: 'c', x: 20, y: 20, type: 'line' },
+    ]
+    const svg = pointsToSvg(pts, 0.3, [extra])
+    expect(svg.split('<path').length - 1).toBe(2)
   })
 })
