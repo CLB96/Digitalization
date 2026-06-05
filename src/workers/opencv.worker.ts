@@ -4,15 +4,16 @@ declare const cv: any
 
 let opencvReady = false
 
-// Load OpenCV.js inside the worker
-;(self as any).importScripts('/opencv.js')
-
+// Module MUST be set before importScripts so OpenCV calls onRuntimeInitialized correctly
 ;(self as any).Module = {
   onRuntimeInitialized() {
     opencvReady = true
     self.postMessage({ type: 'ready' })
   },
 }
+
+// Load OpenCV.js after Module is defined
+;(self as any).importScripts('/opencv.js')
 
 export interface DetectEdgesRequest {
   type: 'detect'

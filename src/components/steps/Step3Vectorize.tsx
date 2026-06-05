@@ -7,6 +7,24 @@ import type { ContourPoint } from '../../types'
 
 type Mode = 'choose' | 'auto' | 'manual'
 
+/** Convert click coordinates accounting for objectFit: contain letterboxing */
+function canvasClickToImageCoords(
+  e: MouseEvent<HTMLCanvasElement>,
+  imageWidth: number,
+  imageHeight: number,
+): { x: number; y: number } | null {
+  const rect = e.currentTarget.getBoundingClientRect()
+  const scaleRatio = Math.min(rect.width / imageWidth, rect.height / imageHeight)
+  const renderedW = imageWidth * scaleRatio
+  const renderedH = imageHeight * scaleRatio
+  const offsetX = (rect.width - renderedW) / 2
+  const offsetY = (rect.height - renderedH) / 2
+  const x = (e.clientX - rect.left - offsetX) / scaleRatio
+  const y = (e.clientY - rect.top - offsetY) / scaleRatio
+  if (x < 0 || y < 0 || x > imageWidth || y > imageHeight) return null
+  return { x, y }
+}
+
 export function Step3Vectorize() {
   const { rawImage, imageWidth, imageHeight, setContourPoints, pushHistory, setStep } = useAppStore(useShallow(s => ({
     rawImage: s.rawImage, imageWidth: s.imageWidth, imageHeight: s.imageHeight,
@@ -20,33 +38,37 @@ export function Step3Vectorize() {
   const [detectedPoints, setDetectedPoints] = useState<{ x: number; y: number }[]>([])
   const [manualPoints, setManualPoints] = useState<{ x: number; y: number }[]>([])
   const workerRef = useRef<Worker | null>(null)
+  const workerReady = useRef(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
+  // Init worker once
   useEffect(() => {
-    workerRef.current = new Worker(
-      new URL('../../workers/opencv.worker.ts', import.meta.url)
-    )
-    workerRef.current.onmessage = (e) => {
-      if (e.data.type === 'ready') runDetection()
+    const worker = new Worker(new URL('../../workers/opencv.worker.ts', import.meta.url))
+    workerRef.current = worker
+    worker.onmessage = (e) => {
+      if (e.data.type === 'ready') {
+        workerReady.current = true
+        // If auto mode was already selected, run now
+        if (mode === 'auto') runDetection()
+      }
       if (e.data.type === 'contour') {
         setDetectedPoints(e.data.points)
         setDetecting(false)
       }
     }
-    return () => workerRef.current?.terminate()
-  }, [])
+    return () => worker.terminate()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function getImageData(): ImageData {
-    const canvas = document.createElement('canvas')
-    canvas.width = imageWidth
-    canvas.height = imageHeight
-    const ctx = canvas.getContext('2d')!
-    ctx.drawImage(rawImage!, 0, 0)
-    return ctx.getImageData(0, 0, imageWidth, imageHeight)
+    const offscreen = document.createElement('canvas')
+    offscreen.width = imageWidth
+    offscreen.height = imageHeight
+    offscreen.getContext('2d')!.drawImage(rawImage!, 0, 0)
+    return offscreen.getContext('2d')!.getImageData(0, 0, imageWidth, imageHeight)
   }
 
   function runDetection() {
-    if (!rawImage || !workerRef.current) return
+    if (!rawImage || !workerRef.current || !workerReady.current) return
     setDetecting(true)
     workerRef.current.postMessage({
       type: 'detect',
@@ -54,6 +76,13 @@ export function Step3Vectorize() {
       threshold1,
       threshold2,
     })
+  }
+
+  function handleAutoMode() {
+    setMode('auto')
+    // Worker may already be ready; if so, run immediately
+    if (workerReady.current) runDetection()
+    // Otherwise worker will trigger runDetection on 'ready' message
   }
 
   // Draw image + contour overlay on canvas
@@ -72,30 +101,36 @@ export function Step3Vectorize() {
       pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
       ctx.closePath()
       ctx.strokeStyle = '#4a7eff'
-      ctx.lineWidth = 2
+      ctx.lineWidth = Math.max(2, imageWidth / 300)
       ctx.stroke()
     }
-    pts.forEach(p => {
+    pts.forEach((p, i) => {
       ctx.beginPath()
-      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2)
-      ctx.fillStyle = '#e11d48'
+      ctx.arc(p.x, p.y, Math.max(4, imageWidth / 200), 0, Math.PI * 2)
+      ctx.fillStyle = i === 0 && pts.length > 1 ? '#ea580c' : '#e11d48'
       ctx.fill()
     })
   }, [detectedPoints, manualPoints, mode, rawImage, imageWidth, imageHeight])
 
   function handleCanvasClick(e: MouseEvent<HTMLCanvasElement>) {
     if (mode !== 'manual') return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const scaleX = imageWidth / rect.width
-    const scaleY = imageHeight / rect.height
-    const x = (e.clientX - rect.left) * scaleX
-    const y = (e.clientY - rect.top) * scaleY
+    const coords = canvasClickToImageCoords(e, imageWidth, imageHeight)
+    if (!coords) return
+    const { x, y } = coords
 
-    // Close contour if clicking near first point
+    // Close contour if clicking near first point (in screen space)
     if (manualPoints.length > 2) {
-      const dx = x - manualPoints[0].x
-      const dy = y - manualPoints[0].y
-      if (Math.sqrt(dx * dx + dy * dy) < 15 * scaleX) {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const scaleRatio = Math.min(rect.width / imageWidth, rect.height / imageHeight)
+      const renderedW = imageWidth * scaleRatio
+      const renderedH = imageHeight * scaleRatio
+      const offsetX = (rect.width - renderedW) / 2
+      const offsetY = (rect.height - renderedH) / 2
+      const firstScreenX = manualPoints[0].x * scaleRatio + offsetX
+      const firstScreenY = manualPoints[0].y * scaleRatio + offsetY
+      const dx = (e.clientX - rect.left) - firstScreenX
+      const dy = (e.clientY - rect.top) - firstScreenY
+      if (Math.sqrt(dx * dx + dy * dy) < 18) {
         confirmManual()
         return
       }
@@ -134,7 +169,7 @@ export function Step3Vectorize() {
               icon: '🤖',
               title: 'Detección automática',
               desc: 'La app detecta los bordes. Tú corriges los puntos.',
-              action: () => setMode('auto'),
+              action: handleAutoMode,
             },
             {
               icon: '✏️',
@@ -171,7 +206,7 @@ export function Step3Vectorize() {
   return (
     <div style={{ display: 'flex', height: '100%' }}>
       {/* Canvas area */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#111' }}>
         <canvas
           ref={canvasRef}
           style={{
@@ -182,10 +217,13 @@ export function Step3Vectorize() {
         />
         {detecting && (
           <div style={{
-            position: 'absolute', inset: 0, display: 'flex',
-            alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)',
+            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)',
+            gap: 12,
           }}>
-            <span style={{ color: 'white' }}>Detectando bordes…</span>
+            <div style={{ width: 40, height: 40, border: '3px solid var(--color-primary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            <span style={{ color: 'white', fontSize: '0.9rem' }}>Detectando bordes con OpenCV…</span>
+            <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
           </div>
         )}
       </div>
@@ -199,24 +237,27 @@ export function Step3Vectorize() {
           <>
             <Slider label="Umbral bajo" min={10} max={200} value={threshold1} onChange={setThreshold1} />
             <Slider label="Umbral alto" min={50} max={400} value={threshold2} onChange={setThreshold2} />
-            <Button variant="ghost" onClick={runDetection} disabled={detecting}>
-              Volver a detectar
+            <Button variant="ghost" onClick={runDetection} disabled={detecting || !workerReady.current}>
+              {detecting ? 'Detectando…' : 'Volver a detectar'}
             </Button>
             <Button onClick={confirmAuto} disabled={detectedPoints.length < 3}>
-              Confirmar
+              Confirmar ({detectedPoints.length} pts)
             </Button>
           </>
         )}
         {mode === 'manual' && (
           <>
             <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-              Haz clic para agregar puntos. Haz clic sobre el primer punto para cerrar el contorno.
+              Haz clic para agregar puntos. El primer punto se muestra en <strong style={{ color: '#ea580c' }}>naranja</strong>. Haz clic cerca de él para cerrar el contorno.
             </p>
             <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
               Puntos: {manualPoints.length}
             </p>
-            <Button variant="ghost" onClick={() => setManualPoints(pts => pts.slice(0, -1))}>
+            <Button variant="ghost" onClick={() => setManualPoints(pts => pts.slice(0, -1))} disabled={manualPoints.length === 0}>
               Deshacer último
+            </Button>
+            <Button variant="ghost" onClick={() => setManualPoints([])}>
+              Limpiar todo
             </Button>
             <Button onClick={confirmManual} disabled={manualPoints.length < 3}>
               Confirmar
