@@ -38,10 +38,38 @@ export function EditorCanvas({ selectedId, onSelect, onPointMove, onAddPoint, on
     return () => ro.disconnect()
   }, [])
 
-  // ── Zoom toward pointer ──────────────────────────────────────────────
+  // ── Non-passive wheel listener so preventDefault works ───────────────
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const handler = (ev: WheelEvent) => {
+      ev.preventDefault()
+      const stage = stageRef.current
+      if (!stage) return
+      const scaleBy = ev.deltaY < 0 ? 1.12 : 0.9
+      const oldScale = stage.scaleX() as number
+      const pointer = stage.getPointerPosition() as { x: number; y: number } | null
+      if (!pointer) return
+      const newScale = Math.min(10, Math.max(0.1, oldScale * scaleBy))
+      const mousePointTo = {
+        x: (pointer.x - stage.x()) / oldScale,
+        y: (pointer.y - stage.y()) / oldScale,
+      }
+      const newPos = {
+        x: pointer.x - mousePointTo.x * newScale,
+        y: pointer.y - mousePointTo.y * newScale,
+      }
+      setZoom(newScale)
+      setStagePos(newPos)
+    }
+    el.addEventListener('wheel', handler, { passive: false })
+    return () => el.removeEventListener('wheel', handler)
+  }, [setZoom, setStagePos])
+
+  // ── Zoom toward pointer (Konva onWheel — kept for touch pinch) ───────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleWheel(e: any) {
-    e.evt.preventDefault()
+    // Native wheel is handled above; this handles Konva's synthetic events
     const stage = stageRef.current
     if (!stage) return
 
