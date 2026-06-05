@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui"
@@ -17,8 +16,7 @@
     "zustand": "^5.0.3",
     "konva": "^9.3.18",
     "react-konva": "^18.2.10",
-    "jspdf": "^2.5.2",
-    "dxf-writer": "^1.7.2"
+    "jspdf": "^2.5.2"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
