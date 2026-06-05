@@ -24,9 +24,23 @@ La app forma parte del ecosistema de herramientas de **R&D Engineering** (ptetoo
 
 ### Estilo
 - **Glassmorphism** oscuro: fondos con `backdrop-filter: blur()` + transparencia
-- Paleta base: azul-morado profundo (fondo), azul eléctrico + blanco (acentos)
 - Typography: misma familia que ptetoolbox.netlify.app
 - Cards con borde semitransparente (`rgba(255,255,255,0.1)`)
+
+### Paleta de tokens CSS (compartida con toda la suite R&D Engineering)
+
+| Token | Valor | Uso |
+|-------|-------|-----|
+| `--color-bg` | `#0d0d1f` | Fondo principal |
+| `--color-surface` | `#1a1a2e` | Cards y paneles |
+| `--color-primary` | `#4a7eff` | Acción principal, botones primarios |
+| `--color-accent` | `#7c5cbf` | Violeta, acentos secundarios |
+| `--color-success` | `#22c55e` | Estados completado / activo |
+| `--color-warning` | `#f59e0b` | Alertas, estado vencido |
+| `--color-error` | `#ef4444` | Errores, estado bloqueado |
+| `--color-neutral` | `#6b7280` | Texto secundario, estado pendiente |
+| `--color-rose` | `#e11d48` | Puntos de escala, alertas críticas de UI |
+| `--color-orange` | `#ea580c` | Handles Bezier, punto seleccionado activo |
 
 ### Header
 - Logo R&D Engineering (igual que en el resto de apps)
