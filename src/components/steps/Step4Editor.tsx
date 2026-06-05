@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../store/appStore'
 import { EditorCanvas } from '../editor/EditorCanvas'
 import { Toolbar } from '../editor/Toolbar'
@@ -12,10 +13,10 @@ import { downloadPdf } from '../../lib/export-pdf'
 import type { SegmentType, ContourPoint } from '../../types'
 
 export function Step4Editor() {
-  const { contourPoints, scaleFactor, setContourPoints, pushHistory, setStep } = useAppStore(s => ({
+  const { contourPoints, scaleFactor, setContourPoints, pushHistory, setStep } = useAppStore(useShallow(s => ({
     contourPoints: s.contourPoints, scaleFactor: s.scaleFactor,
     setContourPoints: s.setContourPoints, pushHistory: s.pushHistory, setStep: s.setStep,
-  }))
+  })))
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showExport, setShowExport] = useState(false)

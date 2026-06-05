@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, MouseEvent } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../store/appStore'
 import { Button } from '../ui/Button'
 import { Slider } from '../ui/Slider'
@@ -7,10 +8,10 @@ import type { ContourPoint } from '../../types'
 type Mode = 'choose' | 'auto' | 'manual'
 
 export function Step3Vectorize() {
-  const { rawImage, imageWidth, imageHeight, setContourPoints, pushHistory, setStep } = useAppStore(s => ({
+  const { rawImage, imageWidth, imageHeight, setContourPoints, pushHistory, setStep } = useAppStore(useShallow(s => ({
     rawImage: s.rawImage, imageWidth: s.imageWidth, imageHeight: s.imageHeight,
     setContourPoints: s.setContourPoints, pushHistory: s.pushHistory, setStep: s.setStep,
-  }))
+  })))
 
   const [mode, setMode] = useState<Mode>('choose')
   const [threshold1, setThreshold1] = useState(50)

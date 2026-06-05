@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../store/appStore'
 import { pxToMm } from '../../hooks/useScale'
 import type { SegmentType } from '../../types'
@@ -8,10 +9,10 @@ interface Props {
 }
 
 export function PropertiesPanel({ selectedId, onSegmentTypeChange }: Props) {
-  const { contourPoints, scaleFactor } = useAppStore(s => ({
+  const { contourPoints, scaleFactor } = useAppStore(useShallow(s => ({
     contourPoints: s.contourPoints,
     scaleFactor: s.scaleFactor,
-  }))
+  })))
   const pt = contourPoints.find(p => p.id === selectedId)
 
   const totalLength = contourPoints.reduce((acc, curr, i) => {

@@ -1,14 +1,15 @@
 import { useRef, useState, MouseEvent } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../store/appStore'
 import { computeScaleFactor } from '../../hooks/useScale'
 import { Button } from '../ui/Button'
 import type { ScaleUnit } from '../../types'
 
 export function Step2Scale() {
-  const { rawImage, imageWidth, imageHeight, setScaleRef, setStep } = useAppStore(s => ({
+  const { rawImage, imageWidth, imageHeight, setScaleRef, setStep } = useAppStore(useShallow(s => ({
     rawImage: s.rawImage, imageWidth: s.imageWidth, imageHeight: s.imageHeight,
     setScaleRef: s.setScaleRef, setStep: s.setStep,
-  }))
+  })))
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [p1, setP1] = useState<{ x: number; y: number } | null>(null)

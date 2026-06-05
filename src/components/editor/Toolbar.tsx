@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../store/appStore'
 import type { ToolId } from '../../types'
 
@@ -11,10 +12,10 @@ const TOOLS: { id: ToolId; icon: string; label: string }[] = [
 ]
 
 export function Toolbar() {
-  const { activeToolId, setActiveTool, undo, redo } = useAppStore(s => ({
+  const { activeToolId, setActiveTool, undo, redo } = useAppStore(useShallow(s => ({
     activeToolId: s.activeToolId, setActiveTool: s.setActiveTool,
     undo: s.undo, redo: s.redo,
-  }))
+  })))
 
   return (
     <div style={{

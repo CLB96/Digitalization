@@ -1,10 +1,11 @@
+import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../store/appStore'
 
 export function StatusBar() {
-  const { scaleFactor, zoom, activeToolId, contourPoints } = useAppStore(s => ({
+  const { scaleFactor, zoom, activeToolId, contourPoints } = useAppStore(useShallow(s => ({
     scaleFactor: s.scaleFactor, zoom: s.zoom,
     activeToolId: s.activeToolId, contourPoints: s.contourPoints,
-  }))
+  })))
 
   return (
     <div style={{

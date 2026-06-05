@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../store/appStore'
 
 export function useKeyboardShortcuts() {
-  const { undo, redo, step } = useAppStore(s => ({ undo: s.undo, redo: s.redo, step: s.step }))
+  const { undo, redo, step } = useAppStore(useShallow(s => ({ undo: s.undo, redo: s.redo, step: s.step })))
 
   useEffect(() => {
     if (step !== 4) return

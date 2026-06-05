@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { Stage, Layer, Image as KImage, Line, Circle } from 'react-konva'
+import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../store/appStore'
 
 interface Props {
@@ -11,10 +12,10 @@ interface Props {
 }
 
 export function EditorCanvas({ selectedId, onSelect, onPointMove, onAddPoint, onDeletePoint }: Props) {
-  const { rawImage, imageWidth, imageHeight, contourPoints, activeToolId, zoom, setZoom } = useAppStore(s => ({
+  const { rawImage, imageWidth, imageHeight, contourPoints, activeToolId, zoom, setZoom } = useAppStore(useShallow(s => ({
     rawImage: s.rawImage, imageWidth: s.imageWidth, imageHeight: s.imageHeight,
     contourPoints: s.contourPoints, activeToolId: s.activeToolId, zoom: s.zoom, setZoom: s.setZoom,
-  }))
+  })))
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 })
