@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(C:\\\\Users\\\\PC AERO R5 PRO\\\\.claude\\\\plugins\\\\cache\\\\claude-plugins-official\\\\superpowers\\\\5.0.7\\\\skills\\\\brainstorming\\\\scripts\\\\start-server.sh --project-dir \"C:\\\\Users\\\\PC AERO R5 PRO\\\\Desktop\\\\Proyectos IA\\\\Digitalizacion\")"
+      "Bash(C:\\\\Users\\\\PC AERO R5 PRO\\\\.claude\\\\plugins\\\\cache\\\\claude-plugins-official\\\\superpowers\\\\5.0.7\\\\skills\\\\brainstorming\\\\scripts\\\\start-server.sh --project-dir \"C:\\\\Users\\\\PC AERO R5 PRO\\\\Desktop\\\\Proyectos IA\\\\Digitalizacion\")",
+      "Bash(npx create-vite@latest . --template react-ts)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(timeout 15 npm run dev)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(node -e ' *)"
     ]
   }
 }
