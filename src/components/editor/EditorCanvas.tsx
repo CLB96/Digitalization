@@ -67,34 +67,6 @@ export function EditorCanvas({ selectedId, onSelect, onPointMove, onAddPoint, on
   }, [setZoom, setStagePos])
 
   // ── Zoom toward pointer (Konva onWheel — kept for touch pinch) ───────
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function handleWheel(e: any) {
-    // Native wheel is handled above; this handles Konva's synthetic events
-    const stage = stageRef.current
-    if (!stage) return
-
-    const oldScale = zoom
-    const pointer = stage.getPointerPosition()
-    if (!pointer) return
-
-    const scaleBy = e.evt.deltaY < 0 ? 1.12 : 0.9
-    const newScale = Math.min(10, Math.max(0.1, oldScale * scaleBy))
-
-    // Zoom toward pointer: adjust stage position so the point under
-    // the cursor stays fixed
-    const mousePointTo = {
-      x: (pointer.x - stagePos.x) / oldScale,
-      y: (pointer.y - stagePos.y) / oldScale,
-    }
-    const newPos = {
-      x: pointer.x - mousePointTo.x * newScale,
-      y: pointer.y - mousePointTo.y * newScale,
-    }
-
-    setZoom(newScale)
-    setStagePos(newPos)
-  }
-
   // ── Stage click ───────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleStageClick(e: any) {
@@ -149,7 +121,6 @@ export function EditorCanvas({ selectedId, onSelect, onPointMove, onAddPoint, on
         scaleY={zoom}
         draggable={activeToolId === 'select' || activeToolId === 'zoom'}
         onClick={handleStageClick}
-        onWheel={handleWheel}
         onDragEnd={handleDragEnd}
       >
         <Layer>

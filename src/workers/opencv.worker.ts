@@ -12,15 +12,16 @@ let opencvReady = false
 }
 ;(self as any).importScripts('/opencv.js')
 
-export interface DetectEdgesRequest {
+// Local types — NOT exported so Vite keeps this as a classic (iife) script
+interface DetectEdgesRequest {
   type: 'detect'
   imageData: ImageData
-  method: number      // 0 = Otsu (auto), 1 = Canny (manual)
-  threshold1: number  // Canny low  (ignored in Otsu mode)
-  threshold2: number  // Canny high (ignored in Otsu mode)
+  method: number
+  threshold1: number
+  threshold2: number
 }
 
-export interface DetectEdgesResponse {
+interface DetectEdgesResponse {
   type: 'contour'
   points: { x: number; y: number }[]
 }
