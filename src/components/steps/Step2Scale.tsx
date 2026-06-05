@@ -1,9 +1,32 @@
-import { useRef, useState, MouseEvent, WheelEvent, CSSProperties } from 'react'
+import { useRef, useState, useEffect, MouseEvent, WheelEvent, CSSProperties } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../store/appStore'
 import { computeScaleFactor } from '../../hooks/useScale'
 import { Button } from '../ui/Button'
 import type { ScaleUnit } from '../../types'
+
+/** Rotate image by angle using an offscreen canvas. Returns data URL and new w/h. */
+function rotateImageData(
+  img: HTMLImageElement,
+  srcW: number,
+  srcH: number,
+  angleDeg: number,
+): { dataUrl: string; w: number; h: number } {
+  const rad = (angleDeg * Math.PI) / 180
+  const cos = Math.abs(Math.cos(rad))
+  const sin = Math.abs(Math.sin(rad))
+  const newW = Math.round(srcW * cos + srcH * sin)
+  const newH = Math.round(srcW * sin + srcH * cos)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = newW
+  canvas.height = newH
+  const ctx = canvas.getContext('2d')!
+  ctx.translate(newW / 2, newH / 2)
+  ctx.rotate(rad)
+  ctx.drawImage(img, -srcW / 2, -srcH / 2, srcW, srcH)
+  return { dataUrl: canvas.toDataURL('image/jpeg', 0.92), w: newW, h: newH }
+}
 
 export function Step2Scale() {
   const { rawImage, imageWidth, imageHeight, setScaleRef, setStep } = useAppStore(useShallow(s => ({
@@ -17,37 +40,53 @@ export function Step2Scale() {
   const [realValue, setRealValue] = useState('')
   const [unit, setUnit] = useState<ScaleUnit>('cm')
   const [zoom, setZoom] = useState(1)
-  const [rotation, setRotation] = useState(0) // 0 | 90 | 180 | 270
 
-  // After rotation, effective display dimensions flip on 90/270
-  const rotated = rotation === 90 || rotation === 270
-  const effectiveW = rotated ? imageHeight : imageWidth
-  const effectiveH = rotated ? imageWidth : imageHeight
+  // Rotation state: cumulative degrees (0, 90, 180, 270, ...)
+  const [rotation, setRotation] = useState(0)
+  // Rotated image cache: {dataUrl, w, h} for current rotation
+  const [rotated, setRotated] = useState<{ dataUrl: string; w: number; h: number } | null>(null)
 
-  /** Convert click on the <img> element to original image pixel coordinates */
+  // Recompute rotated image whenever rawImage or rotation changes
+  useEffect(() => {
+    if (!rawImage) { setRotated(null); return }
+    if (rotation === 0) {
+      setRotated({ dataUrl: rawImage.src, w: imageWidth, h: imageHeight })
+    } else {
+      setRotated(rotateImageData(rawImage, imageWidth, imageHeight, rotation))
+    }
+    setP1(null); setP2(null)
+  }, [rawImage, rotation, imageWidth, imageHeight])
+
+  // Current display dimensions
+  const dispW = rotated?.w ?? imageWidth
+  const dispH = rotated?.h ?? imageHeight
+
+  /** Map click on displayed <img> → original image pixel coordinates */
   function getImageCoords(e: MouseEvent<HTMLImageElement>): { x: number; y: number } {
     const rect = e.currentTarget.getBoundingClientRect()
-    const relX = (e.clientX - rect.left) / rect.width   // 0..1 in display space
-    const relY = (e.clientY - rect.top) / rect.height
-
+    // Coordinates in the *rotated* image space
+    const rx = ((e.clientX - rect.left) / rect.width) * dispW
+    const ry = ((e.clientY - rect.top) / rect.height) * dispH
     // Unrotate back to original image coordinates
-    switch (rotation) {
-      case 90:  return { x: relY * imageWidth,          y: (1 - relX) * imageHeight }
-      case 180: return { x: (1 - relX) * imageWidth,    y: (1 - relY) * imageHeight }
-      case 270: return { x: (1 - relY) * imageWidth,    y: relX * imageHeight }
-      default:  return { x: relX * imageWidth,           y: relY * imageHeight }
+    const normalAngle = ((rotation % 360) + 360) % 360
+    switch (normalAngle) {
+      case 90:  return { x: ry * (imageWidth / dispH), y: (dispW - rx) * (imageHeight / dispW) }
+      case 180: return { x: (dispW - rx) * (imageWidth / dispW), y: (dispH - ry) * (imageHeight / dispH) }
+      case 270: return { x: (dispH - ry) * (imageWidth / dispH), y: rx * (imageHeight / dispW) }
+      default:  return { x: rx, y: ry }
     }
   }
 
-  /** Convert original image coordinates → display percentage (after rotation) */
+  /** Map original image pixel coords → display percentage in rotated image */
   function toDisplayPercent(pt: { x: number; y: number }): { left: string; top: string } {
-    const relX = pt.x / imageWidth
-    const relY = pt.y / imageHeight
-    switch (rotation) {
-      case 90:  return { left: `${(1 - relY) * 100}%`, top: `${relX * 100}%` }
-      case 180: return { left: `${(1 - relX) * 100}%`, top: `${(1 - relY) * 100}%` }
-      case 270: return { left: `${relY * 100}%`,        top: `${(1 - relX) * 100}%` }
-      default:  return { left: `${relX * 100}%`,        top: `${relY * 100}%` }
+    const rx = pt.x / imageWidth  // 0..1 in original
+    const ry = pt.y / imageHeight
+    const normalAngle = ((rotation % 360) + 360) % 360
+    switch (normalAngle) {
+      case 90:  return { left: `${(1 - ry) * 100}%`, top: `${rx * 100}%` }
+      case 180: return { left: `${(1 - rx) * 100}%`, top: `${(1 - ry) * 100}%` }
+      case 270: return { left: `${ry * 100}%`, top: `${(1 - rx) * 100}%` }
+      default:  return { left: `${rx * 100}%`, top: `${ry * 100}%` }
     }
   }
 
@@ -55,19 +94,17 @@ export function Step2Scale() {
     const coords = getImageCoords(e)
     if (!p1) { setP1(coords); return }
     if (!p2) { setP2(coords); return }
-    setP1(coords); setP2(null) // third click resets
+    setP1(coords); setP2(null)
   }
 
   function handleWheel(e: WheelEvent<HTMLDivElement>) {
     e.preventDefault()
-    const delta = e.deltaY > 0 ? 0.85 : 1.18
+    const delta = e.deltaY < 0 ? 1.18 : 0.85
     setZoom(z => Math.min(8, Math.max(0.3, z * delta)))
   }
 
-  function rotate(dir: 'cw' | 'ccw') {
-    setRotation(r => (r + (dir === 'cw' ? 90 : 270)) % 360)
-    setP1(null); setP2(null) // reset points when rotating
-  }
+  function rotateCW() { setRotation(r => r + 90) }
+  function rotateCCW() { setRotation(r => r - 90) }
 
   function confirm() {
     if (!p1 || !p2 || !realValue) return
@@ -89,7 +126,7 @@ export function Step2Scale() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Top toolbar */}
+      {/* Toolbar */}
       <div style={{
         padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: 10,
         borderBottom: '1px solid var(--glass-border)', flexShrink: 0, flexWrap: 'wrap',
@@ -110,10 +147,15 @@ export function Step2Scale() {
             {Math.round(zoom * 100)}%
           </span>
           <button onClick={() => setZoom(z => Math.min(8, z * 1.2))} style={iconBtnStyle} title="Acercar">+</button>
-          <button onClick={() => setZoom(1)} style={{ ...iconBtnStyle, fontSize: '0.6rem', width: 36 }} title="Restablecer zoom">1:1</button>
+          <button onClick={() => setZoom(1)} style={{ ...iconBtnStyle, fontSize: '0.6rem', width: 36 }} title="1:1">1:1</button>
           <div style={{ width: 1, height: 20, background: 'var(--glass-border)', margin: '0 4px' }} />
-          <button onClick={() => rotate('ccw')} style={iconBtnStyle} title="Rotar izquierda">↺</button>
-          <button onClick={() => rotate('cw')} style={iconBtnStyle} title="Rotar derecha">↻</button>
+          <button onClick={rotateCCW} style={iconBtnStyle} title="Rotar izquierda">↺</button>
+          <button onClick={rotateCW} style={iconBtnStyle} title="Rotar derecha">↻</button>
+          {rotation !== 0 && (
+            <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)' }}>
+              {((rotation % 360) + 360) % 360}°
+            </span>
+          )}
         </div>
       </div>
 
@@ -123,37 +165,29 @@ export function Step2Scale() {
           ref={containerRef}
           onWheel={handleWheel}
           style={{
-            flex: 1, overflow: 'auto', position: 'relative',
+            flex: 1, overflow: 'auto',
             background: '#0a0a18',
             display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start',
           }}
         >
-          <div style={{
-            margin: 'auto',
-            position: 'relative', flexShrink: 0, lineHeight: 0,
-            // Extra padding so dots near edges are visible
-            padding: 0,
-          }}>
-            {rawImage && (
+          <div style={{ margin: 'auto', position: 'relative', lineHeight: 0, flexShrink: 0 }}>
+            {rotated && (
               <img
-                src={rawImage.src}
+                src={rotated.dataUrl}
                 alt="referencia"
                 draggable={false}
                 onClick={handleImgClick}
                 style={{
                   display: 'block', userSelect: 'none',
-                  transform: `rotate(${rotation}deg)`,
-                  transformOrigin: 'center',
-                  width: `${effectiveW * zoom}px`,
-                  height: `${effectiveH * zoom}px`,
-                  objectFit: 'fill',
+                  width: `${dispW * zoom}px`,
+                  height: `${dispH * zoom}px`,
                   cursor: 'crosshair',
                 }}
               />
             )}
 
-            {/* Overlay: dots and line */}
-            {rawImage && (p1 || p2) && (
+            {/* Overlay: dots and connecting line */}
+            {rotated && (p1 || p2) && (
               <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
                 {p1 && (() => {
                   const pos = toDisplayPercent(p1)

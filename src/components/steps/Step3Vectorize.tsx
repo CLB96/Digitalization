@@ -32,6 +32,7 @@ export function Step3Vectorize() {
   })))
 
   const [mode, setMode] = useState<Mode>('choose')
+  const [detectionMethod, setDetectionMethod] = useState(0) // 0=Otsu, 1=Canny
   const [threshold1, setThreshold1] = useState(50)
   const [threshold2, setThreshold2] = useState(150)
   const [detecting, setDetecting] = useState(false)
@@ -73,6 +74,7 @@ export function Step3Vectorize() {
     workerRef.current.postMessage({
       type: 'detect',
       imageData: getImageData(),
+      method: detectionMethod,
       threshold1,
       threshold2,
     })
@@ -235,8 +237,28 @@ export function Step3Vectorize() {
       }}>
         {mode === 'auto' && (
           <>
-            <Slider label="Umbral bajo" min={10} max={200} value={threshold1} onChange={setThreshold1} />
-            <Slider label="Umbral alto" min={50} max={400} value={threshold2} onChange={setThreshold2} />
+            {/* Method toggle */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+              <button
+                onClick={() => { setDetectionMethod(0); }}
+                style={{ flex: 1, padding: '4px', fontSize: '0.7rem', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', background: detectionMethod === 0 ? 'var(--color-primary)' : 'var(--glass-bg)', color: 'white', cursor: 'pointer' }}
+              >Automático</button>
+              <button
+                onClick={() => setDetectionMethod(1)}
+                style={{ flex: 1, padding: '4px', fontSize: '0.7rem', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', background: detectionMethod === 1 ? 'var(--color-primary)' : 'var(--glass-bg)', color: 'white', cursor: 'pointer' }}
+              >Canny</button>
+            </div>
+            {detectionMethod === 1 && (
+              <>
+                <Slider label="Umbral bajo" min={10} max={200} value={threshold1} onChange={setThreshold1} />
+                <Slider label="Umbral alto" min={50} max={400} value={threshold2} onChange={setThreshold2} />
+              </>
+            )}
+            {detectionMethod === 0 && (
+              <p style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                Detecta automáticamente el objeto más grande por contraste de color.
+              </p>
+            )}
             <Button variant="ghost" onClick={runDetection} disabled={detecting || !workerReady.current}>
               {detecting ? 'Detectando…' : 'Volver a detectar'}
             </Button>
