@@ -109,14 +109,14 @@ export function EditorCanvas({
       if (isStage) onSelect(null)
     }
 
-    if (activeToolId === 'add-point' && isStage) {
+    if (activeToolId === 'add-point') {
       const pos = stage.getPointerPosition()
       if (pos) {
         onAddPoint((pos.x - stagePos.x) / zoom, (pos.y - stagePos.y) / zoom)
       }
     }
 
-    if (activeToolId === 'measure' && isStage) {
+    if (activeToolId === 'measure') {
       const pos = stage.getPointerPosition()
       if (pos) {
         const pt = { x: (pos.x - stagePos.x) / zoom, y: (pos.y - stagePos.y) / zoom }
