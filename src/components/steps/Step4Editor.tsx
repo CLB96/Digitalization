@@ -50,6 +50,13 @@ export function Step4Editor() {
     pushHistory()
   }
 
+  function toggleSegmentType(id: string) {
+    setContourPoints(contourPoints.map(p =>
+      p.id === id ? { ...p, type: p.type === 'line' ? 'bezier' : 'line' } : p
+    ))
+    pushHistory()
+  }
+
   function handleAddNewPath() {
     if (contourPoints.length < 2) return
     addNewPath()
@@ -99,6 +106,7 @@ export function Step4Editor() {
           onPointMove={updatePoint}
           onAddPoint={addPoint}
           onDeletePoint={deletePoint}
+          onToggleSegmentType={toggleSegmentType}
         />
         <PropertiesPanel selectedId={selectedId} onSegmentTypeChange={changeSegmentType} />
       </div>

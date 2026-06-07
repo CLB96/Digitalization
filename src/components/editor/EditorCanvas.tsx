@@ -1,7 +1,9 @@
 import { useRef, useState, useEffect } from 'react'
-import { Stage, Layer, Image as KImage, Line, Circle } from 'react-konva'
+import { Stage, Layer, Image as KImage, Line, Circle, Path, Text } from 'react-konva'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../store/appStore'
+import { pxToMm } from '../../hooks/useScale'
+import type { ContourPoint } from '../../types'
 
 interface Props {
   selectedId: string | null
@@ -9,36 +11,69 @@ interface Props {
   onPointMove: (id: string, x: number, y: number) => void
   onAddPoint: (x: number, y: number) => void
   onDeletePoint: (id: string) => void
+  onToggleSegmentType: (id: string) => void
 }
 
-export function EditorCanvas({ selectedId, onSelect, onPointMove, onAddPoint, onDeletePoint }: Props) {
+/** Build an SVG path string supporting both line and bezier segments (Catmull-Rom → cubic bezier). */
+function buildPath(pts: ContourPoint[], closed = true): string {
+  if (pts.length < 2) return ''
+  const n = pts.length
+  let d = `M ${pts[0].x} ${pts[0].y}`
+  const limit = closed ? n : n - 1
+  for (let i = 0; i < limit; i++) {
+    const curr = pts[i]
+    const next = pts[(i + 1) % n]
+    if (curr.type === 'bezier') {
+      const prev = pts[(i - 1 + n) % n]
+      const nn   = pts[(i + 2) % n]
+      const t = 0.35
+      const cp1x = curr.x + (next.x - prev.x) * t
+      const cp1y = curr.y + (next.y - prev.y) * t
+      const cp2x = next.x - (nn.x   - curr.x) * t
+      const cp2y = next.y - (nn.y   - curr.y) * t
+      d += ` C ${cp1x} ${cp1y} ${cp2x} ${cp2y} ${next.x} ${next.y}`
+    } else {
+      d += ` L ${next.x} ${next.y}`
+    }
+  }
+  if (closed) d += ' Z'
+  return d
+}
+
+export function EditorCanvas({
+  selectedId, onSelect, onPointMove, onAddPoint, onDeletePoint, onToggleSegmentType,
+}: Props) {
   const {
     rawImage, imageWidth, imageHeight, contourPoints, paths,
-    activeToolId, zoom, stagePos, setZoom, setStagePos,
+    activeToolId, zoom, stagePos, scaleFactor, setZoom, setStagePos,
   } = useAppStore(useShallow(s => ({
     rawImage: s.rawImage, imageWidth: s.imageWidth, imageHeight: s.imageHeight,
     contourPoints: s.contourPoints, paths: s.paths,
     activeToolId: s.activeToolId, zoom: s.zoom, stagePos: s.stagePos,
-    setZoom: s.setZoom, setStagePos: s.setStagePos,
+    scaleFactor: s.scaleFactor, setZoom: s.setZoom, setStagePos: s.setStagePos,
   })))
 
   const containerRef = useRef<HTMLDivElement>(null)
-  const stageRef = useRef<any>(null)
-  const [stageSize, setStageSize] = useState({ width: 800, height: 600 })
+  const stageRef     = useRef<any>(null)
+  const [stageSize, setStageSize]   = useState({ width: 800, height: 600 })
+  const [measurePts, setMeasurePts] = useState<{ x: number; y: number }[]>([])
+
+  // Reset measure points when leaving the measure tool
+  useEffect(() => {
+    if (activeToolId !== 'measure') setMeasurePts([])
+  }, [activeToolId])
 
   // Observe container size
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => {
-      setStageSize({ width: el.clientWidth, height: el.clientHeight })
-    })
+    const ro = new ResizeObserver(() => setStageSize({ width: el.clientWidth, height: el.clientHeight }))
     ro.observe(el)
     setStageSize({ width: el.clientWidth, height: el.clientHeight })
     return () => ro.disconnect()
   }, [])
 
-  // ── Non-passive wheel listener so preventDefault works ───────────────
+  // Non-passive wheel for zoom-to-cursor
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
@@ -46,65 +81,71 @@ export function EditorCanvas({ selectedId, onSelect, onPointMove, onAddPoint, on
       ev.preventDefault()
       const stage = stageRef.current
       if (!stage) return
-      const scaleBy = ev.deltaY < 0 ? 1.12 : 0.9
+      const scaleBy  = ev.deltaY < 0 ? 1.12 : 0.9
       const oldScale = stage.scaleX() as number
-      const pointer = stage.getPointerPosition() as { x: number; y: number } | null
+      const pointer  = stage.getPointerPosition() as { x: number; y: number } | null
       if (!pointer) return
       const newScale = Math.min(10, Math.max(0.1, oldScale * scaleBy))
       const mousePointTo = {
         x: (pointer.x - stage.x()) / oldScale,
         y: (pointer.y - stage.y()) / oldScale,
       }
-      const newPos = {
+      setZoom(newScale)
+      setStagePos({
         x: pointer.x - mousePointTo.x * newScale,
         y: pointer.y - mousePointTo.y * newScale,
-      }
-      setZoom(newScale)
-      setStagePos(newPos)
+      })
     }
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)
   }, [setZoom, setStagePos])
 
-  // ── Zoom toward pointer (Konva onWheel — kept for touch pinch) ───────
-  // ── Stage click ───────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleStageClick(e: any) {
     const stage = e.target.getStage()
+    const isStage = e.target === stage
+
     if (activeToolId === 'select' || activeToolId === 'edit-point') {
-      if (e.target === stage) onSelect(null)
+      if (isStage) onSelect(null)
     }
-    if (activeToolId === 'add-point') {
+
+    if (activeToolId === 'add-point' && isStage) {
       const pos = stage.getPointerPosition()
       if (pos) {
-        // Convert from stage coordinates to image coordinates
-        const imgX = (pos.x - stagePos.x) / zoom
-        const imgY = (pos.y - stagePos.y) / zoom
-        onAddPoint(imgX, imgY)
+        onAddPoint((pos.x - stagePos.x) / zoom, (pos.y - stagePos.y) / zoom)
+      }
+    }
+
+    if (activeToolId === 'measure' && isStage) {
+      const pos = stage.getPointerPosition()
+      if (pos) {
+        const pt = { x: (pos.x - stagePos.x) / zoom, y: (pos.y - stagePos.y) / zoom }
+        setMeasurePts(prev => prev.length >= 2 ? [pt] : [...prev, pt])
       }
     }
   }
 
-  // ── Stage drag end (panning) ──────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleDragEnd(e: any) {
     setStagePos({ x: e.target.x(), y: e.target.y() })
   }
 
-  // Cursor based on tool
-  const cursor = activeToolId === 'add-point' ? 'crosshair'
-    : activeToolId === 'delete-point' ? 'not-allowed'
-    : activeToolId === 'zoom' ? 'zoom-in'
-    : 'grab'
-
-  // ── Helpers to build flat point arrays (in image px) ─────────────────
-  function flatPts(pts: { x: number; y: number }[]): number[] {
-    if (pts.length < 2) return []
-    return [
-      ...pts.flatMap(p => [p.x, p.y]),
-      pts[0].x, pts[0].y,
-    ]
+  const cursorMap: Record<string, string> = {
+    'add-point':    'crosshair',
+    'delete-point': 'cell',
+    'segment-type': 'pointer',
+    'measure':      'crosshair',
+    'zoom':         'zoom-in',
   }
+  const cursor = cursorMap[activeToolId] ?? 'grab'
+
+  // Measure distance
+  const distPx = measurePts.length === 2
+    ? Math.sqrt((measurePts[1].x - measurePts[0].x) ** 2 + (measurePts[1].y - measurePts[0].y) ** 2)
+    : 0
+  const distMm = pxToMm(distPx, scaleFactor)
+  const midX = measurePts.length === 2 ? (measurePts[0].x + measurePts[1].x) / 2 : 0
+  const midY = measurePts.length === 2 ? (measurePts[0].y + measurePts[1].y) / 2 : 0
 
   return (
     <div
@@ -125,29 +166,27 @@ export function EditorCanvas({ selectedId, onSelect, onPointMove, onAddPoint, on
       >
         <Layer>
           {/* Background image */}
-          {rawImage && (
-            <KImage image={rawImage} width={imageWidth} height={imageHeight} />
-          )}
+          {rawImage && <KImage image={rawImage} width={imageWidth} height={imageHeight} />}
 
-          {/* Finalized separate paths (dimmed blue) */}
+          {/* Finalized paths */}
           {paths.map((path, pi) => (
-            <Line
+            <Path
               key={`path-${pi}`}
-              points={flatPts(path)}
+              data={buildPath(path)}
               stroke="rgba(74,158,255,0.5)"
               strokeWidth={1.5 / zoom}
-              closed
+              fill="transparent"
               dash={[6 / zoom, 3 / zoom]}
             />
           ))}
 
           {/* Active path contour */}
-          {flatPts(contourPoints).length > 0 && (
-            <Line
-              points={flatPts(contourPoints)}
+          {contourPoints.length >= 2 && (
+            <Path
+              data={buildPath(contourPoints)}
               stroke="#4a7eff"
               strokeWidth={2 / zoom}
-              closed
+              fill="transparent"
             />
           )}
 
@@ -158,22 +197,52 @@ export function EditorCanvas({ selectedId, onSelect, onPointMove, onAddPoint, on
               x={pt.x}
               y={pt.y}
               radius={(selectedId === pt.id ? 7 : 5) / zoom}
-              fill={selectedId === pt.id ? '#ea580c' : 'white'}
-              stroke={selectedId === pt.id ? '#ea580c' : '#4a7eff'}
+              fill={
+                pt.type === 'bezier'
+                  ? (selectedId === pt.id ? '#a855f7' : 'rgba(168,85,247,0.7)')
+                  : (selectedId === pt.id ? '#ea580c' : 'white')
+              }
+              stroke={selectedId === pt.id ? (pt.type === 'bezier' ? '#a855f7' : '#ea580c') : '#4a7eff'}
               strokeWidth={2 / zoom}
               draggable={activeToolId === 'select' || activeToolId === 'edit-point'}
               onClick={(e) => {
                 e.cancelBubble = true
-                if (activeToolId === 'delete-point') { onDeletePoint(pt.id); return }
+                if (activeToolId === 'delete-point')   { onDeletePoint(pt.id); return }
+                if (activeToolId === 'segment-type')   { onToggleSegmentType(pt.id); return }
                 onSelect(pt.id)
               }}
               onDragEnd={(e) => onPointMove(pt.id, e.target.x(), e.target.y())}
             />
           ))}
+
+          {/* Measure tool overlay */}
+          {measurePts.length >= 1 && (
+            <Circle x={measurePts[0].x} y={measurePts[0].y} radius={4 / zoom} fill="#fbbf24" />
+          )}
+          {measurePts.length === 2 && (
+            <>
+              <Line
+                points={[measurePts[0].x, measurePts[0].y, measurePts[1].x, measurePts[1].y]}
+                stroke="#fbbf24"
+                strokeWidth={1.5 / zoom}
+                dash={[5 / zoom, 3 / zoom]}
+              />
+              <Circle x={measurePts[1].x} y={measurePts[1].y} radius={4 / zoom} fill="#fbbf24" />
+              <Text
+                x={midX}
+                y={midY - 14 / zoom}
+                text={`${distMm.toFixed(2)} mm`}
+                fontSize={11 / zoom}
+                fill="#fbbf24"
+                fontStyle="bold"
+                offsetX={0}
+              />
+            </>
+          )}
         </Layer>
       </Stage>
 
-      {/* Zoom level indicator */}
+      {/* Zoom level */}
       <div style={{
         position: 'absolute', bottom: 8, left: 8,
         background: 'rgba(0,0,0,0.55)', color: 'rgba(255,255,255,0.7)',
@@ -181,6 +250,19 @@ export function EditorCanvas({ selectedId, onSelect, onPointMove, onAddPoint, on
       }}>
         {Math.round(zoom * 100)}% · Rueda = zoom · Arrastrar = mover
       </div>
+
+      {/* Measure hint */}
+      {activeToolId === 'measure' && (
+        <div style={{
+          position: 'absolute', bottom: 8, right: 8,
+          background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)',
+          color: '#fbbf24', fontSize: '0.68rem', padding: '3px 8px', borderRadius: 4, pointerEvents: 'none',
+        }}>
+          {measurePts.length === 0 && 'Haz click en el punto inicial'}
+          {measurePts.length === 1 && 'Haz click en el punto final'}
+          {measurePts.length === 2 && `Distancia: ${distMm.toFixed(2)} mm · Click para nueva medición`}
+        </div>
+      )}
     </div>
   )
 }

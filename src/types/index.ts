@@ -23,6 +23,7 @@ export type ToolId =
   | 'segment-type'
   | 'add-point'
   | 'delete-point'
+  | 'measure'
   | 'zoom'
 
 export interface ContourSnapshot {
