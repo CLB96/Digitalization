@@ -100,29 +100,35 @@ export function EditorCanvas({
     return () => el.removeEventListener('wheel', handler)
   }, [setZoom, setStagePos])
 
+  /** Handles add-point and measure clicks — called from both KImage and Stage. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function handleToolClick(e: any) {
+    const stage = e.target.getStage()
+    const pos = stage.getPointerPosition()
+    if (!pos) return
+    const imgX = (pos.x - stagePos.x) / zoom
+    const imgY = (pos.y - stagePos.y) / zoom
+
+    if (activeToolId === 'add-point') {
+      onAddPoint(imgX, imgY)
+    }
+    if (activeToolId === 'measure') {
+      const pt = { x: imgX, y: imgY }
+      setMeasurePts(prev => prev.length >= 2 ? [pt] : [...prev, pt])
+    }
+  }
+
+  /** Stage click — only for empty canvas area (deselect, and tool fallback outside image). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleStageClick(e: any) {
     const stage = e.target.getStage()
     const isStage = e.target === stage
+    if (!isStage) return
 
     if (activeToolId === 'select' || activeToolId === 'edit-point') {
-      if (isStage) onSelect(null)
+      onSelect(null)
     }
-
-    if (activeToolId === 'add-point') {
-      const pos = stage.getPointerPosition()
-      if (pos) {
-        onAddPoint((pos.x - stagePos.x) / zoom, (pos.y - stagePos.y) / zoom)
-      }
-    }
-
-    if (activeToolId === 'measure') {
-      const pos = stage.getPointerPosition()
-      if (pos) {
-        const pt = { x: (pos.x - stagePos.x) / zoom, y: (pos.y - stagePos.y) / zoom }
-        setMeasurePts(prev => prev.length >= 2 ? [pt] : [...prev, pt])
-      }
-    }
+    handleToolClick(e)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -165,8 +171,15 @@ export function EditorCanvas({
         onDragEnd={handleDragEnd}
       >
         <Layer>
-          {/* Background image */}
-          {rawImage && <KImage image={rawImage} width={imageWidth} height={imageHeight} />}
+          {/* Background image — explicit onClick so tool clicks work over the photo */}
+          {rawImage && (
+            <KImage
+              image={rawImage}
+              width={imageWidth}
+              height={imageHeight}
+              onClick={(e) => { e.cancelBubble = true; handleToolClick(e) }}
+            />
+          )}
 
           {/* Finalized paths */}
           {paths.map((path, pi) => (
