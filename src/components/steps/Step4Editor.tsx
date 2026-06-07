@@ -16,14 +16,25 @@ export function Step4Editor() {
   const {
     contourPoints, paths, scaleFactor,
     setContourPoints, addNewPath, removePathAt, pushHistory, setStep,
+    setExported, reset,
   } = useAppStore(useShallow(s => ({
     contourPoints: s.contourPoints, paths: s.paths, scaleFactor: s.scaleFactor,
     setContourPoints: s.setContourPoints, addNewPath: s.addNewPath,
     removePathAt: s.removePathAt, pushHistory: s.pushHistory, setStep: s.setStep,
+    setExported: s.setExported, reset: s.reset,
   })))
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [showExport, setShowExport] = useState(false)
+  const [showExport, setShowExport]   = useState(false)
+  const [showSuccess, setShowSuccess] = useState(false)
+  const [exportedFormat, setExportedFormat] = useState('')
+
+  function handleExportDone(format: string) {
+    setShowExport(false)
+    setExportedFormat(format)
+    setExported(true)
+    setShowSuccess(true)
+  }
 
   /** All paths combined for export */
   const allPaths = [...paths, ...(contourPoints.length > 1 ? [contourPoints] : [])]
@@ -151,15 +162,66 @@ export function Step4Editor() {
             <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
               Se exportarán todos los trazos ({allPaths.length} en total).
             </p>
-            <Button onClick={() => { downloadDxf(contourPoints, scaleFactor, paths); setShowExport(false) }}>
+            <Button onClick={() => { downloadDxf(contourPoints, scaleFactor, paths); handleExportDone('DXF') }}>
               📐 DXF (AutoCAD / CNC)
             </Button>
-            <Button variant="ghost" onClick={() => { downloadSvg(contourPoints, scaleFactor, paths); setShowExport(false) }}>
+            <Button variant="ghost" onClick={() => { downloadSvg(contourPoints, scaleFactor, paths); handleExportDone('SVG') }}>
               🖼 SVG
             </Button>
-            <Button variant="ghost" onClick={() => { downloadPdf(contourPoints, scaleFactor, paths); setShowExport(false) }}>
+            <Button variant="ghost" onClick={() => { downloadPdf(contourPoints, scaleFactor, paths); handleExportDone('PDF') }}>
               📄 PDF
             </Button>
+          </div>
+        </Modal>
+      )}
+
+      {showSuccess && (
+        <Modal title="" onClose={() => setShowSuccess(false)}>
+          <div style={{ textAlign: 'center', padding: '0.5rem 1rem 1rem' }}>
+            {/* Animated checkmark */}
+            <div style={{
+              width: 76, height: 76, borderRadius: '50%',
+              background: 'var(--color-success)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 1.25rem',
+              animation: 'pop-in 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) both',
+            }}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+
+            <h3 style={{
+              fontSize: '1.15rem', fontWeight: 700, marginBottom: 8,
+              animation: 'fade-up 0.35s 0.2s both',
+            }}>
+              ¡Exportación exitosa!
+            </h3>
+            <p style={{
+              fontSize: '0.82rem', color: 'var(--color-text-muted)', marginBottom: '1.5rem',
+              animation: 'fade-up 0.35s 0.3s both',
+            }}>
+              Tu vectorización fue exportada como <strong style={{ color: 'var(--color-primary)' }}>{exportedFormat}</strong> correctamente.
+            </p>
+
+            <div style={{
+              display: 'flex', gap: 10, justifyContent: 'center',
+              animation: 'fade-up 0.35s 0.4s both',
+            }}>
+              <Button
+                onClick={() => setShowSuccess(false)}
+                style={{ minWidth: 140 }}
+              >
+                Continuar editando
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => reset()}
+                style={{ minWidth: 140 }}
+              >
+                Ir al inicio
+              </Button>
+            </div>
           </div>
         </Modal>
       )}

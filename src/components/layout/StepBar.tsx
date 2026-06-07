@@ -1,15 +1,16 @@
+import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../store/appStore'
 
 const STEPS = ['Cargar', 'Escala', 'Vectorizar', 'Editar']
 
 export function StepBar() {
-  const step = useAppStore(s => s.step)
+  const { step, exported } = useAppStore(useShallow(s => ({ step: s.step, exported: s.exported })))
   return (
     <div className="flex items-center gap-1 px-4">
       {STEPS.map((label, i) => {
         const n = i + 1
-        const isActive = n === step
-        const isDone = n < step
+        const isActive = n === step && !(n === 4 && exported)
+        const isDone = n < step || (n === 4 && exported)
         return (
           <div key={n} className="flex items-center gap-1">
             <div style={{

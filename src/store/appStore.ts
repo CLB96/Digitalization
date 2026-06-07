@@ -34,6 +34,8 @@ interface AppState {
   setActiveTool: (id: ToolId) => void
   setZoom: (z: number) => void
   setStagePos: (pos: { x: number; y: number }) => void
+  exported: boolean
+  setExported: (v: boolean) => void
   reset: () => void
 }
 
@@ -51,6 +53,7 @@ const initialState = {
   activeToolId: 'select' as ToolId,
   zoom: 1,
   stagePos: { x: 0, y: 0 },
+  exported: false,
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -108,6 +111,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setZoom: (zoom) => set({ zoom }),
 
   setStagePos: (stagePos) => set({ stagePos }),
+
+  setExported: (exported) => set({ exported }),
 
   reset: () => set({ ...initialState }),
 }))
