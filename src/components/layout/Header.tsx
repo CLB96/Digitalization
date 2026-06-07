@@ -1,5 +1,30 @@
+import { useState } from 'react'
 import { StepBar } from './StepBar'
 import { HamburgerMenu } from './HamburgerMenu'
+
+function LogoWithFallback() {
+  const [failed, setFailed] = useState(false)
+
+  if (failed) {
+    return (
+      <span style={{
+        fontWeight: 900, fontSize: '0.65rem', letterSpacing: '0.5px',
+        color: 'var(--color-primary)', userSelect: 'none',
+      }}>
+        CJLB
+      </span>
+    )
+  }
+
+  return (
+    <img
+      src="/logo.png"
+      alt="R&D Engineering"
+      onError={() => setFailed(true)}
+      style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+    />
+  )
+}
 
 export function Header() {
   return (
@@ -17,13 +42,9 @@ export function Header() {
           background: '#111',
           border: '1px solid rgba(255,255,255,0.12)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          overflow: 'hidden',
+          overflow: 'hidden', position: 'relative',
         }}>
-          <img
-            src="/logo.png"
-            alt="R&D Engineering"
-            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-          />
+          <LogoWithFallback />
         </div>
 
         {/* Name */}
