@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
-import { Stage, Layer, Image as KImage, Line, Circle, Path, Text } from 'react-konva'
+import { Stage, Layer, Group, Image as KImage, Line, Circle, Path, Text } from 'react-konva'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../store/appStore'
 import { pxToMm } from '../../hooks/useScale'
@@ -38,20 +38,24 @@ function buildPath(pts: ContourPoint[], closed = true): string {
   return d
 }
 
-/** Rotate a screen-space point back to unrotated canvas space (90° increments). */
-function inverseRotate(
-  px: number, py: number,
-  cw: number, ch: number,
+/**
+ * Convert a point in Konva stage-space (after pan/zoom, before group rotation)
+ * back to image-pixel coordinates, accounting for the Group's rotation around
+ * the image center.
+ */
+function stageToImageCoords(
+  sx: number, sy: number,
+  imgW: number, imgH: number,
   rotDeg: number,
 ): { x: number; y: number } {
-  const cx = cw / 2, cy = ch / 2
-  const dx = px - cx, dy = py - cy
+  const cx = imgW / 2, cy = imgH / 2
+  const dx = sx - cx, dy = sy - cy
   const norm = ((rotDeg % 360) + 360) % 360
   switch (norm) {
     case 90:  return { x: cx + dy,  y: cy - dx }
     case 180: return { x: cx - dx,  y: cy - dy }
     case 270: return { x: cx - dy,  y: cy + dx }
-    default:  return { x: px, y: py }
+    default:  return { x: sx, y: sy }
   }
 }
 
@@ -76,21 +80,24 @@ export function EditorCanvas({
   const [stageSize, setStageSize]   = useState({ width: 800, height: 600 })
   const [measurePts, setMeasurePts] = useState<{ x: number; y: number }[]>([])
 
-  // ── Refs so the native click handler always sees fresh values ─────────────
+  // ── Refs so native handlers always see fresh values ───────────────────────
   const activeToolIdRef   = useRef(activeToolId)
   const stagePosRef       = useRef(stagePos)
   const zoomRef           = useRef(zoom)
   const imageRotationRef  = useRef(imageRotation)
+  const imageWidthRef     = useRef(imageWidth)
+  const imageHeightRef    = useRef(imageHeight)
   const stageSizeRef      = useRef(stageSize)
   const onAddPointRef     = useRef(onAddPoint)
   const setMeasurePtsRef  = useRef(setMeasurePts)
-  /** Set to true in onMouseDown of a Circle so the native handler skips that click. */
   const blockClickRef     = useRef(false)
 
   useEffect(() => { activeToolIdRef.current  = activeToolId  }, [activeToolId])
   useEffect(() => { stagePosRef.current      = stagePos      }, [stagePos])
   useEffect(() => { zoomRef.current          = zoom          }, [zoom])
   useEffect(() => { imageRotationRef.current = imageRotation }, [imageRotation])
+  useEffect(() => { imageWidthRef.current    = imageWidth    }, [imageWidth])
+  useEffect(() => { imageHeightRef.current   = imageHeight   }, [imageHeight])
   useEffect(() => { stageSizeRef.current     = stageSize     }, [stageSize])
   useEffect(() => { onAddPointRef.current    = onAddPoint    }, [onAddPoint])
   useEffect(() => { setMeasurePtsRef.current = setMeasurePts }, [setMeasurePts])
@@ -146,6 +153,7 @@ export function EditorCanvas({
   }, [])
 
   // Non-passive wheel for zoom-to-cursor
+  // The Stage has no CSS rotation, so stage.getPointerPosition() is always correct.
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
@@ -155,45 +163,25 @@ export function EditorCanvas({
       if (!stage) return
       const scaleBy  = ev.deltaY < 0 ? 1.12 : 0.9
       const oldScale = stage.scaleX() as number
+      const pointer  = stage.getPointerPosition() as { x: number; y: number } | null
+      if (!pointer) return
       const newScale = Math.min(10, Math.max(0.1, oldScale * scaleBy))
-
-      const rot = imageRotationRef.current
-      const sw  = stageSizeRef.current.width
-      const sh  = stageSizeRef.current.height
-
-      if (rot === 0) {
-        // Zoom to cursor when not rotated
-        const pointer = stage.getPointerPosition() as { x: number; y: number } | null
-        if (!pointer) return
-        const mousePointTo = {
-          x: (pointer.x - stage.x()) / oldScale,
-          y: (pointer.y - stage.y()) / oldScale,
-        }
-        setZoom(newScale)
-        setStagePos({
-          x: pointer.x - mousePointTo.x * newScale,
-          y: pointer.y - mousePointTo.y * newScale,
-        })
-      } else {
-        // When rotated, zoom around the container center in stage space
-        const rect = el.getBoundingClientRect()
-        const pointerX = ev.clientX - rect.left
-        const pointerY = ev.clientY - rect.top
-        const { x: ux, y: uy } = inverseRotate(pointerX, pointerY, sw, sh, rot)
-        const pos = stagePosRef.current
-        const mousePointTo = { x: (ux - pos.x) / oldScale, y: (uy - pos.y) / oldScale }
-        setZoom(newScale)
-        setStagePos({
-          x: ux - mousePointTo.x * newScale,
-          y: uy - mousePointTo.y * newScale,
-        })
+      const mousePointTo = {
+        x: (pointer.x - stage.x()) / oldScale,
+        y: (pointer.y - stage.y()) / oldScale,
       }
+      setZoom(newScale)
+      setStagePos({
+        x: pointer.x - mousePointTo.x * newScale,
+        y: pointer.y - mousePointTo.y * newScale,
+      })
     }
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)
   }, [setZoom, setStagePos])
 
   // ── Native DOM click — handles add-point and measure on ALL canvas areas ──
+  // Converts: screen → stage-space → image-space (accounting for group rotation).
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -211,17 +199,18 @@ export function EditorCanvas({
       const pointerX = ev.clientX - rect.left
       const pointerY = ev.clientY - rect.top
 
-      // Unrotate screen coords back to stage canvas space
-      const { x: ux, y: uy } = inverseRotate(
-        pointerX, pointerY,
-        stageSizeRef.current.width, stageSizeRef.current.height,
-        imageRotationRef.current,
-      )
-
+      // Screen → stage-space (undo pan + zoom)
       const pos = stagePosRef.current
       const z   = zoomRef.current
-      const imgX = (ux - pos.x) / z
-      const imgY = (uy - pos.y) / z
+      const stageX = (pointerX - pos.x) / z
+      const stageY = (pointerY - pos.y) / z
+
+      // Stage-space → image-space (undo group rotation)
+      const { x: imgX, y: imgY } = stageToImageCoords(
+        stageX, stageY,
+        imageWidthRef.current, imageHeightRef.current,
+        imageRotationRef.current,
+      )
 
       if (tool === 'add-point') {
         onAddPointRef.current(imgX, imgY)
@@ -267,31 +256,36 @@ export function EditorCanvas({
   const midX   = measurePts.length === 2 ? (measurePts[0].x + measurePts[1].x) / 2 : 0
   const midY   = measurePts.length === 2 ? (measurePts[0].y + measurePts[1].y) / 2 : 0
 
+  // Group rotates around the image center
+  const groupProps = imageRotation !== 0 ? {
+    rotation: imageRotation,
+    x: imageWidth / 2,
+    y: imageHeight / 2,
+    offsetX: imageWidth / 2,
+    offsetY: imageHeight / 2,
+  } : {}
+
   return (
     <div
       ref={containerRef}
       style={{ flex: 1, overflow: 'hidden', background: '#1a1a2e', position: 'relative', cursor }}
     >
-      {/* Rotatable stage wrapper */}
-      <div style={{
-        width: stageSize.width,
-        height: stageSize.height,
-        transform: imageRotation !== 0 ? `rotate(${imageRotation}deg)` : undefined,
-        transformOrigin: 'center center',
-      }}>
-        <Stage
-          ref={stageRef}
-          width={stageSize.width}
-          height={stageSize.height}
-          x={stagePos.x}
-          y={stagePos.y}
-          scaleX={zoom}
-          scaleY={zoom}
-          draggable={activeToolId === 'select' || activeToolId === 'zoom'}
-          onClick={handleStageClick}
-          onDragEnd={handleDragEnd}
-        >
-          <Layer>
+      <Stage
+        ref={stageRef}
+        width={stageSize.width}
+        height={stageSize.height}
+        x={stagePos.x}
+        y={stagePos.y}
+        scaleX={zoom}
+        scaleY={zoom}
+        draggable={activeToolId === 'select' || activeToolId === 'zoom'}
+        onClick={handleStageClick}
+        onDragEnd={handleDragEnd}
+      >
+        <Layer>
+          {/* Single Group that applies rotation around the image center.
+              All content lives inside so Konva hit-testing stays correct. */}
+          <Group {...groupProps}>
             {/* Background image */}
             {rawImage && (
               <KImage image={rawImage} width={imageWidth} height={imageHeight} listening={false} />
@@ -368,9 +362,9 @@ export function EditorCanvas({
                 />
               </>
             )}
-          </Layer>
-        </Stage>
-      </div>
+          </Group>
+        </Layer>
+      </Stage>
 
       {/* Zoom indicator */}
       <div style={{
