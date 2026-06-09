@@ -84,7 +84,7 @@ function TabHerramientas() {
 }
 
 function TabAtaljos() {
-  const rows: [string, string][] = [
+  const mouseRows: [string, string][] = [
     ['Rueda del mouse', 'Zoom centrado en el cursor'],
     ['Click + arrastrar', 'Mover la vista (en modo seleccionar o zoom)'],
     ['Click en punto', 'Seleccionar punto'],
@@ -92,11 +92,19 @@ function TabAtaljos() {
     ['Ctrl + Z', 'Deshacer'],
     ['Ctrl + Y / Ctrl + Shift + Z', 'Rehacer'],
   ]
+  const toolRows: [string, string][] = [
+    ['S', 'Seleccionar'],
+    ['E', 'Editar punto'],
+    ['A', 'Agregar punto'],
+    ['D', 'Eliminar punto'],
+    ['M', 'Medir distancia'],
+    ['Z', 'Zoom'],
+  ]
   return (
     <div>
       {sectionTitle('Atajos de teclado y ratón')}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {rows.map(([key, desc]) => (
+        {mouseRows.map(([key, desc]) => (
           <div key={key} style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
             <div style={{ flexShrink: 0, minWidth: 180 }}>
               {key.split(' / ').map((k, i) => (
@@ -108,10 +116,21 @@ function TabAtaljos() {
         ))}
       </div>
 
+      {sectionTitle('Teclas rápidas — herramientas')}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px' }}>
+        {toolRows.map(([key, desc]) => (
+          <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 160 }}>
+            {kbd(key)}
+            <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', margin: 0 }}>{desc}</p>
+          </div>
+        ))}
+      </div>
+
       {sectionTitle('Botones del editor')}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {([
           ['↺ / ↻ (barra lateral)', 'Deshacer / Rehacer'],
+          ['⊡ Fit (barra superior)', 'Centrar y ajustar imagen al canvas'],
           ['+ Nuevo trazo (barra superior)', 'Guarda el trazo actual y empieza uno nuevo'],
           ['↓ Exportar', 'Abre el panel de exportación (DXF / SVG / PDF)'],
         ] as [string, string][]).map(([key, desc]) => (
