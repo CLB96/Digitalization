@@ -17,6 +17,7 @@ interface AppState {
   activeToolId: ToolId
   zoom: number
   stagePos: { x: number; y: number }
+  imageRotation: number
 
   setStep: (step: AppStep) => void
   setImage: (img: HTMLImageElement, w: number, h: number) => void
@@ -34,6 +35,7 @@ interface AppState {
   setActiveTool: (id: ToolId) => void
   setZoom: (z: number) => void
   setStagePos: (pos: { x: number; y: number }) => void
+  setImageRotation: (r: number) => void
   exported: boolean
   setExported: (v: boolean) => void
   reset: () => void
@@ -53,6 +55,7 @@ const initialState = {
   activeToolId: 'select' as ToolId,
   zoom: 1,
   stagePos: { x: 0, y: 0 },
+  imageRotation: 0,
   exported: false,
 }
 
@@ -111,6 +114,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setZoom: (zoom) => set({ zoom }),
 
   setStagePos: (stagePos) => set({ stagePos }),
+
+  setImageRotation: (imageRotation) => set({ imageRotation }),
 
   setExported: (exported) => set({ exported }),
 

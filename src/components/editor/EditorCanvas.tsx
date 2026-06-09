@@ -14,7 +14,7 @@ interface Props {
   onToggleSegmentType: (id: string) => void
 }
 
-/** Build an SVG path string supporting both line and bezier segments (Catmull-Rom → cubic bezier). */
+/** Build an SVG path string supporting line and bezier segments (Catmull-Rom → cubic bezier). */
 function buildPath(pts: ContourPoint[], closed = true): string {
   if (pts.length < 2) return ''
   const n = pts.length
@@ -27,11 +27,7 @@ function buildPath(pts: ContourPoint[], closed = true): string {
       const prev = pts[(i - 1 + n) % n]
       const nn   = pts[(i + 2) % n]
       const t = 0.35
-      const cp1x = curr.x + (next.x - prev.x) * t
-      const cp1y = curr.y + (next.y - prev.y) * t
-      const cp2x = next.x - (nn.x   - curr.x) * t
-      const cp2y = next.y - (nn.y   - curr.y) * t
-      d += ` C ${cp1x} ${cp1y} ${cp2x} ${cp2y} ${next.x} ${next.y}`
+      d += ` C ${curr.x + (next.x - prev.x) * t} ${curr.y + (next.y - prev.y) * t} ${next.x - (nn.x - curr.x) * t} ${next.y - (nn.y - curr.y) * t} ${next.x} ${next.y}`
     } else {
       d += ` L ${next.x} ${next.y}`
     }
@@ -40,17 +36,36 @@ function buildPath(pts: ContourPoint[], closed = true): string {
   return d
 }
 
+/** Rotate a screen-space point back to unrotated canvas space (90° increments). */
+function inverseRotate(
+  px: number, py: number,
+  cw: number, ch: number,
+  rotDeg: number,
+): { x: number; y: number } {
+  const cx = cw / 2, cy = ch / 2
+  const dx = px - cx, dy = py - cy
+  const norm = ((rotDeg % 360) + 360) % 360
+  switch (norm) {
+    case 90:  return { x: cx + dy,  y: cy - dx }
+    case 180: return { x: cx - dx,  y: cy - dy }
+    case 270: return { x: cx - dy,  y: cy + dx }
+    default:  return { x: px, y: py }
+  }
+}
+
 export function EditorCanvas({
   selectedId, onSelect, onPointMove, onAddPoint, onDeletePoint, onToggleSegmentType,
 }: Props) {
   const {
     rawImage, imageWidth, imageHeight, contourPoints, paths,
-    activeToolId, zoom, stagePos, scaleFactor, setZoom, setStagePos,
+    activeToolId, zoom, stagePos, scaleFactor, imageRotation,
+    setZoom, setStagePos, setActiveTool,
   } = useAppStore(useShallow(s => ({
     rawImage: s.rawImage, imageWidth: s.imageWidth, imageHeight: s.imageHeight,
     contourPoints: s.contourPoints, paths: s.paths,
     activeToolId: s.activeToolId, zoom: s.zoom, stagePos: s.stagePos,
-    scaleFactor: s.scaleFactor, setZoom: s.setZoom, setStagePos: s.setStagePos,
+    scaleFactor: s.scaleFactor, imageRotation: s.imageRotation,
+    setZoom: s.setZoom, setStagePos: s.setStagePos, setActiveTool: s.setActiveTool,
   })))
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -58,10 +73,45 @@ export function EditorCanvas({
   const [stageSize, setStageSize]   = useState({ width: 800, height: 600 })
   const [measurePts, setMeasurePts] = useState<{ x: number; y: number }[]>([])
 
+  // ── Refs so the native click handler always sees fresh values ─────────────
+  const activeToolIdRef   = useRef(activeToolId)
+  const stagePosRef       = useRef(stagePos)
+  const zoomRef           = useRef(zoom)
+  const imageRotationRef  = useRef(imageRotation)
+  const stageSizeRef      = useRef(stageSize)
+  const onAddPointRef     = useRef(onAddPoint)
+  const setMeasurePtsRef  = useRef(setMeasurePts)
+  /** Set to true in onMouseDown of a Circle so the native handler skips that click. */
+  const blockClickRef     = useRef(false)
+
+  useEffect(() => { activeToolIdRef.current  = activeToolId  }, [activeToolId])
+  useEffect(() => { stagePosRef.current      = stagePos      }, [stagePos])
+  useEffect(() => { zoomRef.current          = zoom          }, [zoom])
+  useEffect(() => { imageRotationRef.current = imageRotation }, [imageRotation])
+  useEffect(() => { stageSizeRef.current     = stageSize     }, [stageSize])
+  useEffect(() => { onAddPointRef.current    = onAddPoint    }, [onAddPoint])
+  useEffect(() => { setMeasurePtsRef.current = setMeasurePts }, [setMeasurePts])
+
   // Reset measure points when leaving the measure tool
   useEffect(() => {
     if (activeToolId !== 'measure') setMeasurePts([])
   }, [activeToolId])
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      const toolMap: Record<string, string> = {
+        s: 'select', e: 'edit-point', a: 'add-point',
+        d: 'delete-point', m: 'measure', z: 'zoom',
+      }
+      const tool = toolMap[e.key.toLowerCase()]
+      if (tool) setActiveTool(tool as Parameters<typeof setActiveTool>[0])
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [setActiveTool])
 
   // Observe container size
   useEffect(() => {
@@ -83,52 +133,94 @@ export function EditorCanvas({
       if (!stage) return
       const scaleBy  = ev.deltaY < 0 ? 1.12 : 0.9
       const oldScale = stage.scaleX() as number
-      const pointer  = stage.getPointerPosition() as { x: number; y: number } | null
-      if (!pointer) return
       const newScale = Math.min(10, Math.max(0.1, oldScale * scaleBy))
-      const mousePointTo = {
-        x: (pointer.x - stage.x()) / oldScale,
-        y: (pointer.y - stage.y()) / oldScale,
+
+      const rot = imageRotationRef.current
+      const sw  = stageSizeRef.current.width
+      const sh  = stageSizeRef.current.height
+
+      if (rot === 0) {
+        // Zoom to cursor when not rotated
+        const pointer = stage.getPointerPosition() as { x: number; y: number } | null
+        if (!pointer) return
+        const mousePointTo = {
+          x: (pointer.x - stage.x()) / oldScale,
+          y: (pointer.y - stage.y()) / oldScale,
+        }
+        setZoom(newScale)
+        setStagePos({
+          x: pointer.x - mousePointTo.x * newScale,
+          y: pointer.y - mousePointTo.y * newScale,
+        })
+      } else {
+        // When rotated, zoom around the container center in stage space
+        const rect = el.getBoundingClientRect()
+        const pointerX = ev.clientX - rect.left
+        const pointerY = ev.clientY - rect.top
+        const { x: ux, y: uy } = inverseRotate(pointerX, pointerY, sw, sh, rot)
+        const pos = stagePosRef.current
+        const mousePointTo = { x: (ux - pos.x) / oldScale, y: (uy - pos.y) / oldScale }
+        setZoom(newScale)
+        setStagePos({
+          x: ux - mousePointTo.x * newScale,
+          y: uy - mousePointTo.y * newScale,
+        })
       }
-      setZoom(newScale)
-      setStagePos({
-        x: pointer.x - mousePointTo.x * newScale,
-        y: pointer.y - mousePointTo.y * newScale,
-      })
     }
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)
   }, [setZoom, setStagePos])
 
-  /** Handles add-point and measure clicks — called from both KImage and Stage. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function handleToolClick(e: any) {
-    const stage = e.target.getStage()
-    const pos = stage.getPointerPosition()
-    if (!pos) return
-    const imgX = (pos.x - stagePos.x) / zoom
-    const imgY = (pos.y - stagePos.y) / zoom
+  // ── Native DOM click — handles add-point and measure on ALL canvas areas ──
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
 
-    if (activeToolId === 'add-point') {
-      onAddPoint(imgX, imgY)
-    }
-    if (activeToolId === 'measure') {
-      const pt = { x: imgX, y: imgY }
-      setMeasurePts(prev => prev.length >= 2 ? [pt] : [...prev, pt])
-    }
-  }
+    const handler = (ev: MouseEvent) => {
+      if (blockClickRef.current) {
+        blockClickRef.current = false
+        return
+      }
 
-  /** Stage click — only for empty canvas area (deselect, and tool fallback outside image). */
+      const tool = activeToolIdRef.current
+      if (tool !== 'add-point' && tool !== 'measure') return
+
+      const rect = container.getBoundingClientRect()
+      const pointerX = ev.clientX - rect.left
+      const pointerY = ev.clientY - rect.top
+
+      // Unrotate screen coords back to stage canvas space
+      const { x: ux, y: uy } = inverseRotate(
+        pointerX, pointerY,
+        stageSizeRef.current.width, stageSizeRef.current.height,
+        imageRotationRef.current,
+      )
+
+      const pos = stagePosRef.current
+      const z   = zoomRef.current
+      const imgX = (ux - pos.x) / z
+      const imgY = (uy - pos.y) / z
+
+      if (tool === 'add-point') {
+        onAddPointRef.current(imgX, imgY)
+      }
+      if (tool === 'measure') {
+        setMeasurePtsRef.current(prev =>
+          prev.length >= 2 ? [{ x: imgX, y: imgY }] : [...prev, { x: imgX, y: imgY }]
+        )
+      }
+    }
+
+    container.addEventListener('click', handler)
+    return () => container.removeEventListener('click', handler)
+  }, [])
+
+  // Stage click — only for deselection
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleStageClick(e: any) {
-    const stage = e.target.getStage()
-    const isStage = e.target === stage
+    const isStage = e.target === e.target.getStage()
     if (!isStage) return
-
-    if (activeToolId === 'select' || activeToolId === 'edit-point') {
-      onSelect(null)
-    }
-    handleToolClick(e)
+    if (activeToolId === 'select' || activeToolId === 'edit-point') onSelect(null)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -145,117 +237,120 @@ export function EditorCanvas({
   }
   const cursor = cursorMap[activeToolId] ?? 'grab'
 
-  // Measure distance
+  // Measure overlay values
   const distPx = measurePts.length === 2
     ? Math.sqrt((measurePts[1].x - measurePts[0].x) ** 2 + (measurePts[1].y - measurePts[0].y) ** 2)
     : 0
   const distMm = pxToMm(distPx, scaleFactor)
-  const midX = measurePts.length === 2 ? (measurePts[0].x + measurePts[1].x) / 2 : 0
-  const midY = measurePts.length === 2 ? (measurePts[0].y + measurePts[1].y) / 2 : 0
+  const midX   = measurePts.length === 2 ? (measurePts[0].x + measurePts[1].x) / 2 : 0
+  const midY   = measurePts.length === 2 ? (measurePts[0].y + measurePts[1].y) / 2 : 0
 
   return (
     <div
       ref={containerRef}
       style={{ flex: 1, overflow: 'hidden', background: '#1a1a2e', position: 'relative', cursor }}
     >
-      <Stage
-        ref={stageRef}
-        width={stageSize.width}
-        height={stageSize.height}
-        x={stagePos.x}
-        y={stagePos.y}
-        scaleX={zoom}
-        scaleY={zoom}
-        draggable={activeToolId === 'select' || activeToolId === 'zoom'}
-        onClick={handleStageClick}
-        onDragEnd={handleDragEnd}
-      >
-        <Layer>
-          {/* Background image — explicit onClick so tool clicks work over the photo */}
-          {rawImage && (
-            <KImage
-              image={rawImage}
-              width={imageWidth}
-              height={imageHeight}
-              onClick={(e) => { e.cancelBubble = true; handleToolClick(e) }}
-            />
-          )}
+      {/* Rotatable stage wrapper */}
+      <div style={{
+        width: stageSize.width,
+        height: stageSize.height,
+        transform: imageRotation !== 0 ? `rotate(${imageRotation}deg)` : undefined,
+        transformOrigin: 'center center',
+      }}>
+        <Stage
+          ref={stageRef}
+          width={stageSize.width}
+          height={stageSize.height}
+          x={stagePos.x}
+          y={stagePos.y}
+          scaleX={zoom}
+          scaleY={zoom}
+          draggable={activeToolId === 'select' || activeToolId === 'zoom'}
+          onClick={handleStageClick}
+          onDragEnd={handleDragEnd}
+        >
+          <Layer>
+            {/* Background image */}
+            {rawImage && (
+              <KImage image={rawImage} width={imageWidth} height={imageHeight} listening={false} />
+            )}
 
-          {/* Finalized paths */}
-          {paths.map((path, pi) => (
-            <Path
-              key={`path-${pi}`}
-              data={buildPath(path)}
-              stroke="rgba(74,158,255,0.5)"
-              strokeWidth={1.5 / zoom}
-              fill="transparent"
-              dash={[6 / zoom, 3 / zoom]}
-            />
-          ))}
-
-          {/* Active path contour */}
-          {contourPoints.length >= 2 && (
-            <Path
-              data={buildPath(contourPoints)}
-              stroke="#4a7eff"
-              strokeWidth={2 / zoom}
-              fill="transparent"
-            />
-          )}
-
-          {/* Active path points */}
-          {contourPoints.map(pt => (
-            <Circle
-              key={pt.id}
-              x={pt.x}
-              y={pt.y}
-              radius={(selectedId === pt.id ? 7 : 5) / zoom}
-              fill={
-                pt.type === 'bezier'
-                  ? (selectedId === pt.id ? '#a855f7' : 'rgba(168,85,247,0.7)')
-                  : (selectedId === pt.id ? '#ea580c' : 'white')
-              }
-              stroke={selectedId === pt.id ? (pt.type === 'bezier' ? '#a855f7' : '#ea580c') : '#4a7eff'}
-              strokeWidth={2 / zoom}
-              draggable={activeToolId === 'select' || activeToolId === 'edit-point'}
-              onClick={(e) => {
-                e.cancelBubble = true
-                if (activeToolId === 'delete-point')   { onDeletePoint(pt.id); return }
-                if (activeToolId === 'segment-type')   { onToggleSegmentType(pt.id); return }
-                onSelect(pt.id)
-              }}
-              onDragEnd={(e) => onPointMove(pt.id, e.target.x(), e.target.y())}
-            />
-          ))}
-
-          {/* Measure tool overlay */}
-          {measurePts.length >= 1 && (
-            <Circle x={measurePts[0].x} y={measurePts[0].y} radius={4 / zoom} fill="#fbbf24" />
-          )}
-          {measurePts.length === 2 && (
-            <>
-              <Line
-                points={[measurePts[0].x, measurePts[0].y, measurePts[1].x, measurePts[1].y]}
-                stroke="#fbbf24"
+            {/* Finalized paths */}
+            {paths.map((path, pi) => (
+              <Path
+                key={`path-${pi}`}
+                data={buildPath(path)}
+                stroke="rgba(74,158,255,0.5)"
                 strokeWidth={1.5 / zoom}
-                dash={[5 / zoom, 3 / zoom]}
+                fill="transparent"
+                dash={[6 / zoom, 3 / zoom]}
+                listening={false}
               />
-              <Circle x={measurePts[1].x} y={measurePts[1].y} radius={4 / zoom} fill="#fbbf24" />
-              <Text
-                x={midX}
-                y={midY - 14 / zoom}
-                text={`${distMm.toFixed(2)} mm`}
-                fontSize={11 / zoom}
-                fill="#fbbf24"
-                fontStyle="bold"
-                offsetX={0}
-              />
-            </>
-          )}
-        </Layer>
-      </Stage>
+            ))}
 
-      {/* Zoom level */}
+            {/* Active path contour */}
+            {contourPoints.length >= 2 && (
+              <Path
+                data={buildPath(contourPoints)}
+                stroke="#4a7eff"
+                strokeWidth={2 / zoom}
+                fill="transparent"
+                listening={false}
+              />
+            )}
+
+            {/* Active path points */}
+            {contourPoints.map(pt => (
+              <Circle
+                key={pt.id}
+                x={pt.x}
+                y={pt.y}
+                radius={(selectedId === pt.id ? 7 : 5) / zoom}
+                fill={
+                  pt.type === 'bezier'
+                    ? (selectedId === pt.id ? '#a855f7' : 'rgba(168,85,247,0.7)')
+                    : (selectedId === pt.id ? '#ea580c' : 'white')
+                }
+                stroke={selectedId === pt.id ? (pt.type === 'bezier' ? '#a855f7' : '#ea580c') : '#4a7eff'}
+                strokeWidth={2 / zoom}
+                draggable={activeToolId === 'select' || activeToolId === 'edit-point'}
+                onMouseDown={() => {
+                  if (activeToolId === 'add-point') blockClickRef.current = true
+                }}
+                onClick={(e) => {
+                  e.cancelBubble = true
+                  if (activeToolId === 'delete-point')  { onDeletePoint(pt.id);       return }
+                  if (activeToolId === 'segment-type')  { onToggleSegmentType(pt.id); return }
+                  onSelect(pt.id)
+                }}
+                onDragEnd={(e) => onPointMove(pt.id, e.target.x(), e.target.y())}
+              />
+            ))}
+
+            {/* Measure overlay */}
+            {measurePts.length >= 1 && (
+              <Circle x={measurePts[0].x} y={measurePts[0].y} radius={4 / zoom} fill="#fbbf24" listening={false} />
+            )}
+            {measurePts.length === 2 && (
+              <>
+                <Line
+                  points={[measurePts[0].x, measurePts[0].y, measurePts[1].x, measurePts[1].y]}
+                  stroke="#fbbf24" strokeWidth={1.5 / zoom} dash={[5 / zoom, 3 / zoom]} listening={false}
+                />
+                <Circle x={measurePts[1].x} y={measurePts[1].y} radius={4 / zoom} fill="#fbbf24" listening={false} />
+                <Text
+                  x={midX} y={midY - 14 / zoom}
+                  text={`${distMm.toFixed(2)} mm`}
+                  fontSize={11 / zoom} fill="#fbbf24" fontStyle="bold"
+                  listening={false}
+                />
+              </>
+            )}
+          </Layer>
+        </Stage>
+      </div>
+
+      {/* Zoom indicator */}
       <div style={{
         position: 'absolute', bottom: 8, left: 8,
         background: 'rgba(0,0,0,0.55)', color: 'rgba(255,255,255,0.7)',
@@ -276,6 +371,16 @@ export function EditorCanvas({
           {measurePts.length === 2 && `Distancia: ${distMm.toFixed(2)} mm · Click para nueva medición`}
         </div>
       )}
+
+      {/* Keyboard shortcut hint */}
+      <div style={{
+        position: 'absolute', top: 8, right: 8,
+        background: 'rgba(0,0,0,0.45)', color: 'rgba(255,255,255,0.45)',
+        fontSize: '0.6rem', padding: '3px 8px', borderRadius: 4, pointerEvents: 'none',
+        lineHeight: 1.6,
+      }}>
+        S Selec · E Editar · A Agregar · D Borrar · M Medir · Z Zoom
+      </div>
     </div>
   )
 }

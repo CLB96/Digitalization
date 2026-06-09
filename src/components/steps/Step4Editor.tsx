@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, CSSProperties } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../store/appStore'
 import { EditorCanvas } from '../editor/EditorCanvas'
@@ -15,12 +15,15 @@ import type { SegmentType, ContourPoint } from '../../types'
 export function Step4Editor() {
   const {
     contourPoints, paths, scaleFactor,
+    zoom, imageRotation,
     setContourPoints, addNewPath, removePathAt, pushHistory, setStep,
-    setExported, reset,
+    setZoom, setImageRotation, setExported, reset,
   } = useAppStore(useShallow(s => ({
     contourPoints: s.contourPoints, paths: s.paths, scaleFactor: s.scaleFactor,
+    zoom: s.zoom, imageRotation: s.imageRotation,
     setContourPoints: s.setContourPoints, addNewPath: s.addNewPath,
     removePathAt: s.removePathAt, pushHistory: s.pushHistory, setStep: s.setStep,
+    setZoom: s.setZoom, setImageRotation: s.setImageRotation,
     setExported: s.setExported, reset: s.reset,
   })))
 
@@ -74,6 +77,13 @@ export function Step4Editor() {
     setSelectedId(null)
   }
 
+  const iconBtn: CSSProperties = {
+    background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
+    borderRadius: 'var(--radius-sm)', color: 'white', cursor: 'pointer',
+    width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: '0.85rem', padding: 0, flexShrink: 0,
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Top bar */}
@@ -103,6 +113,22 @@ export function Step4Editor() {
           >
             + Nuevo trazo
           </Button>
+        </div>
+
+        {/* Zoom + rotation controls */}
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+          <button onClick={() => setZoom(Math.max(0.1, zoom * 0.8))} style={iconBtn} title="Alejar">−</button>
+          <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', minWidth: 34, textAlign: 'center' }}>
+            {Math.round(zoom * 100)}%
+          </span>
+          <button onClick={() => setZoom(Math.min(10, zoom * 1.2))} style={iconBtn} title="Acercar">+</button>
+          <button onClick={() => setZoom(1)} style={{ ...iconBtn, width: 30, fontSize: '0.58rem' }} title="1:1">1:1</button>
+          <div style={{ width: 1, height: 18, background: 'var(--glass-border)', margin: '0 2px' }} />
+          <button onClick={() => setImageRotation(((imageRotation - 90) % 360 + 360) % 360)} style={iconBtn} title="Rotar izquierda">↺</button>
+          <button onClick={() => setImageRotation((imageRotation + 90) % 360)} style={iconBtn} title="Rotar derecha">↻</button>
+          {imageRotation !== 0 && (
+            <span style={{ fontSize: '0.6rem', color: 'var(--color-text-muted)' }}>{imageRotation}°</span>
+          )}
         </div>
 
         <Button onClick={() => setShowExport(true)}>↓ Exportar</Button>

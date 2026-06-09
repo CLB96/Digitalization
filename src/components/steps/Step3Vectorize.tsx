@@ -246,7 +246,7 @@ export function Step3Vectorize() {
               <button
                 onClick={() => setDetectionMethod(1)}
                 style={{ flex: 1, padding: '4px', fontSize: '0.7rem', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', background: detectionMethod === 1 ? 'var(--color-primary)' : 'var(--glass-bg)', color: 'white', cursor: 'pointer' }}
-              >Canny</button>
+              >Semi automático</button>
             </div>
             {detectionMethod === 1 && (
               <>
@@ -265,6 +265,22 @@ export function Step3Vectorize() {
             <Button onClick={confirmAuto} disabled={detectedPoints.length < 3}>
               Confirmar ({detectedPoints.length} pts)
             </Button>
+            {detectionMethod === 1 && (
+              <div style={{
+                fontSize: '0.68rem', color: 'var(--color-text-muted)',
+                background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)',
+                borderRadius: 'var(--radius-sm)', padding: '8px 10px',
+                display: 'flex', flexDirection: 'column', gap: 6,
+              }}>
+                <p style={{ margin: 0, fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>Guía de umbrales</p>
+                <p style={{ margin: 0 }}>
+                  <span style={{ color: 'var(--color-primary)' }}>Umbral bajo:</span> controla qué tan sensible es el detector. Un valor bajo capta más bordes débiles (puede agregar ruido); un valor alto solo detecta bordes muy marcados.
+                </p>
+                <p style={{ margin: 0 }}>
+                  <span style={{ color: 'var(--color-primary)' }}>Umbral alto:</span> define los bordes principales. Debe ser 2–3× el umbral bajo. Súbelo si aparecen demasiados contornos falsos; bájalo si el contorno queda incompleto.
+                </p>
+              </div>
+            )}
           </>
         )}
         {mode === 'manual' && (
