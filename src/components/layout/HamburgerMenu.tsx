@@ -66,9 +66,14 @@ export function HamburgerMenu() {
       {open && (
         <>
           <div onClick={close} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-          <div className="glass" style={{
+          <div style={{
             position: 'fixed', top: 52, right: 12, zIndex: 50,
             minWidth: 220, padding: '6px 0',
+            background: 'rgba(12, 12, 28, 0.97)',
+            border: '1px solid rgba(255,255,255,0.15)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(4px)',
           }}>
             {menuItem(handleHelp, '📖', 'Manual de usuario')}
             {divider()}
