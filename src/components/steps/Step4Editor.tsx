@@ -31,6 +31,7 @@ export function Step4Editor() {
   const [showExport, setShowExport]   = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const [exportedFormat, setExportedFormat] = useState('')
+  const [centerTrigger, setCenterTrigger] = useState(0)
 
   function handleExportDone(format: string) {
     setShowExport(false)
@@ -117,6 +118,8 @@ export function Step4Editor() {
 
         {/* Zoom + rotation controls */}
         <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+          <button onClick={() => setCenterTrigger(t => t + 1)} style={{ ...iconBtn, width: 52, fontSize: '0.62rem' }} title="Centrar imagen">⊡ Fit</button>
+          <div style={{ width: 1, height: 18, background: 'var(--glass-border)', margin: '0 2px' }} />
           <button onClick={() => setZoom(Math.max(0.1, zoom * 0.8))} style={iconBtn} title="Alejar">−</button>
           <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', minWidth: 34, textAlign: 'center' }}>
             {Math.round(zoom * 100)}%
@@ -144,6 +147,7 @@ export function Step4Editor() {
           onAddPoint={addPoint}
           onDeletePoint={deletePoint}
           onToggleSegmentType={toggleSegmentType}
+          centerTrigger={centerTrigger}
         />
         <PropertiesPanel selectedId={selectedId} onSegmentTypeChange={changeSegmentType} />
       </div>

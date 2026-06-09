@@ -12,6 +12,8 @@ interface Props {
   onAddPoint: (x: number, y: number) => void
   onDeletePoint: (id: string) => void
   onToggleSegmentType: (id: string) => void
+  /** Increment to trigger a fit-to-screen / center reset */
+  centerTrigger?: number
 }
 
 /** Build an SVG path string supporting line and bezier segments (Catmull-Rom → cubic bezier). */
@@ -55,6 +57,7 @@ function inverseRotate(
 
 export function EditorCanvas({
   selectedId, onSelect, onPointMove, onAddPoint, onDeletePoint, onToggleSegmentType,
+  centerTrigger,
 }: Props) {
   const {
     rawImage, imageWidth, imageHeight, contourPoints, paths,
@@ -91,6 +94,25 @@ export function EditorCanvas({
   useEffect(() => { stageSizeRef.current     = stageSize     }, [stageSize])
   useEffect(() => { onAddPointRef.current    = onAddPoint    }, [onAddPoint])
   useEffect(() => { setMeasurePtsRef.current = setMeasurePts }, [setMeasurePts])
+
+  // Fit image to canvas whenever centerTrigger increments
+  useEffect(() => {
+    if (centerTrigger === undefined || centerTrigger === 0) return
+    const sw = stageSizeRef.current.width
+    const sh = stageSizeRef.current.height
+    if (!sw || !sh || !imageWidth || !imageHeight) return
+    const padding = 40
+    const fitZoom = Math.min(
+      (sw - padding * 2) / imageWidth,
+      (sh - padding * 2) / imageHeight,
+    )
+    const newZoom = Math.min(10, Math.max(0.05, fitZoom))
+    setZoom(newZoom)
+    setStagePos({
+      x: (sw - imageWidth * newZoom) / 2,
+      y: (sh - imageHeight * newZoom) / 2,
+    })
+  }, [centerTrigger, imageWidth, imageHeight, setZoom, setStagePos])
 
   // Reset measure points when leaving the measure tool
   useEffect(() => {
